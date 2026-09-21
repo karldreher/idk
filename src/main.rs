@@ -1,5 +1,6 @@
 mod cli;
 mod copy;
+mod outcome;
 mod runner;
 mod show;
 mod tag_field;
