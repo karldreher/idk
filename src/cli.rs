@@ -1,5 +1,6 @@
 //! Command-line argument definitions.
 
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
@@ -51,4 +52,25 @@ pub struct CopyTagsArgs {
     /// MP3 files to update.
     #[arg(required = true, value_name = "FILES")]
     pub files: Vec<PathBuf>,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
+}
+
+/// Execution options shared by file-processing operations.
+#[derive(Args)]
+pub struct RunOptions {
+    /// Maximum number of files processed concurrently [default: available CPUs].
+    #[arg(short, long, value_name = "N")]
+    pub jobs: Option<NonZeroUsize>,
+}
+
+impl RunOptions {
+    /// The effective concurrency limit.
+    pub fn jobs(&self) -> usize {
+        self.jobs
+            .or_else(|| std::thread::available_parallelism().ok())
+            .map_or(1, NonZeroUsize::get)
+    }
 }

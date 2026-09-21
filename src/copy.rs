@@ -1,8 +1,10 @@
 //! `idk copy tags`: copy one tag's value into another tag.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use futures_util::{StreamExt, stream};
 use id3::{Frame, Tag, TagLike};
 
 use crate::cli::CopyTagsArgs;
@@ -74,11 +76,21 @@ impl Report {
 }
 
 /// Runs `idk copy tags` over every input file and returns the process exit code.
+///
+/// Files are processed concurrently, up to `--jobs` at a time.
 pub async fn run(args: CopyTagsArgs) -> ExitCode {
+    let files = unique_files(args.files.clone()).await;
+    let (from, to) = (args.from, args.to);
+    let mut results = stream::iter(files)
+        .map(|path| async move {
+            let result = copy_file(path.clone(), from, to).await;
+            (path, result)
+        })
+        .buffer_unordered(args.run.jobs());
+
     let mut report = Report::default();
-    for path in &args.files {
-        let result = copy_file(path.clone(), args.from, args.to).await;
-        report.record(path, result, &args);
+    while let Some((path, result)) = results.next().await {
+        report.record(&path, result, &args);
     }
 
     println!(
@@ -90,6 +102,24 @@ pub async fn run(args: CopyTagsArgs) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// Drops inputs that resolve to the same file, keeping the first spelling.
+///
+/// Two concurrent writers on one file would race, so duplicates (for example
+/// `a.mp3` and `./a.mp3`) must be collapsed before dispatch.
+async fn unique_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
+    tokio::task::spawn_blocking(move || {
+        let mut seen = HashSet::new();
+        files
+            .into_iter()
+            .filter(|path| {
+                seen.insert(std::fs::canonicalize(path).unwrap_or_else(|_| path.clone()))
+            })
+            .collect()
+    })
+    .await
+    .expect("dedupe task panicked")
 }
 
 /// Runs [`copy_tag`] on tokio's blocking pool, since tag writes are synchronous file I/O.
@@ -224,6 +254,17 @@ mod tests {
 
         assert_eq!(outcome, Outcome::SourceEmpty);
         assert_eq!(std::fs::read(&path).unwrap(), AUDIO);
+    }
+
+    #[tokio::test]
+    async fn collapses_duplicate_inputs() {
+        let dir = TempDir::new().unwrap();
+        let path = write_mp3(&dir, None, Version::Id3v24);
+        let alias = dir.path().join(".").join("song.mp3");
+
+        let files = unique_files(vec![path.clone(), alias, path.clone()]).await;
+
+        assert_eq!(files, vec![path]);
     }
 
     #[test]
