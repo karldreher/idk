@@ -16,6 +16,7 @@ cargo install --path .
 ```bash
 idk copy tags --from artist --to albumartist song.mp3
 idk copy tags --from albumartist --to artist *.mp3
+idk copy tags --from artist --to albumartist --dry-run *.mp3   # preview only
 ```
 
 The destination tag is overwritten. Other metadata is left untouched, and files whose destination already matches are not rewritten.
@@ -38,6 +39,7 @@ Tag names are case-insensitive; `txxx:` descriptions are matched exactly.
 
 | Option            | Description                                                          |
 |-------------------|----------------------------------------------------------------------|
+| `-n, --dry-run`   | Print each change (`song.mp3: albumartist "Old" -> "New"`) without writing any file |
 | `--fail-on-empty` | Treat files with no source value as failures instead of skipping them |
 | `-j, --jobs <N>`  | Maximum files processed concurrently (default: available CPUs)       |
 | `-q, --quiet`     | Hide the progress bar and summary; errors are still reported         |

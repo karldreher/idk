@@ -275,3 +275,71 @@ fn rejects_unknown_field_listing_valid_ones() {
         .code(2)
         .stderr(contains("invalid value 'artists'").and(contains("txxx:<description>")));
 }
+
+#[test]
+fn dry_run_previews_without_modifying_files() {
+    let dir = TempDir::new().unwrap();
+    let changed = mp3(&dir, "changed.mp3", Some("New"), Some("Old"));
+    let unset = mp3(&dir, "unset.mp3", Some("Artist"), None);
+    let before: Vec<_> = [&changed, &unset]
+        .iter()
+        .map(|f| {
+            (
+                std::fs::read(f).unwrap(),
+                std::fs::metadata(f).unwrap().modified().unwrap(),
+            )
+        })
+        .collect();
+
+    idk()
+        .args([
+            "copy",
+            "tags",
+            "--from",
+            "artist",
+            "--to",
+            "albumartist",
+            "--dry-run",
+        ])
+        .args([&changed, &unset])
+        .assert()
+        .success()
+        .stdout(
+            contains(r#"changed.mp3: albumartist "Old" -> "New""#)
+                .and(contains(r#"unset.mp3: albumartist (none) -> "Artist""#))
+                .and(contains("2 would be updated")),
+        );
+
+    let after: Vec<_> = [&changed, &unset]
+        .iter()
+        .map(|f| {
+            (
+                std::fs::read(f).unwrap(),
+                std::fs::metadata(f).unwrap().modified().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(after, before);
+}
+
+#[test]
+fn dry_run_exit_code_matches_real_run() {
+    let dir = TempDir::new().unwrap();
+    let empty = mp3(&dir, "empty.mp3", None, None);
+
+    idk()
+        .args([
+            "copy",
+            "tags",
+            "--from",
+            "artist",
+            "--to",
+            "albumartist",
+            "-n",
+            "--fail-on-empty",
+        ])
+        .arg(&empty)
+        .assert()
+        .code(1)
+        .stderr(contains("empty.mp3: no artist value"));
+}

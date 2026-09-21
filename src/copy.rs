@@ -48,10 +48,14 @@ pub enum Plan {
 
 impl Plan {
     /// Writes the planned tag to `path` if it changed, and reports the outcome.
-    pub fn apply(self, path: &Path) -> id3::Result<Outcome> {
+    ///
+    /// With `dry_run`, nothing is written but the outcome is the same.
+    pub fn apply(self, path: &Path, dry_run: bool) -> id3::Result<Outcome> {
         match self {
             Plan::Write { tag, change } => {
-                tag.write_to_path(path, tag.version())?;
+                if !dry_run {
+                    tag.write_to_path(path, tag.version())?;
+                }
                 Ok(Outcome::Updated(change))
             }
             Plan::Unchanged => Ok(Outcome::Unchanged),
@@ -87,8 +91,13 @@ pub fn plan_copy(path: &Path, from: &TagField, to: &TagField) -> id3::Result<Pla
 ///
 /// The destination is overwritten. Every other frame, the tag version and the
 /// audio data are preserved. The file is only written when its tag changes.
-pub fn copy_tag(path: &Path, from: &TagField, to: &TagField) -> id3::Result<Outcome> {
-    plan_copy(path, from, to)?.apply(path)
+pub fn copy_tag(
+    path: &Path,
+    from: &TagField,
+    to: &TagField,
+    dry_run: bool,
+) -> id3::Result<Outcome> {
+    plan_copy(path, from, to)?.apply(path, dry_run)
 }
 
 /// Per-run tallies used for the final summary and exit code.
@@ -111,6 +120,8 @@ impl Report {
     }
 
     /// Records one file's result, printing failures to stderr above the progress bar.
+    ///
+    /// In a dry run, each pending change is printed to stdout.
     fn record(
         &mut self,
         path: &Path,
@@ -119,7 +130,17 @@ impl Report {
         progress: &ProgressBar,
     ) {
         match result {
-            Ok(Outcome::Updated(_)) => self.updated += 1,
+            Ok(Outcome::Updated(change)) => {
+                self.updated += 1;
+                if args.write.dry_run {
+                    let old = change
+                        .old
+                        .map_or("(none)".to_owned(), |old| format!("{old:?}"));
+                    progress.suspend(|| {
+                        println!("{}: {} {old} -> {:?}", path.display(), args.to, change.new)
+                    });
+                }
+            }
             Ok(Outcome::Unchanged) => self.unchanged += 1,
             Ok(Outcome::SourceEmpty) if args.fail_on_empty => {
                 self.failed += 1;
@@ -143,8 +164,9 @@ pub async fn run(args: CopyTagsArgs) -> ExitCode {
     let mut results = stream::iter(files)
         .map(|path| {
             let (from, to) = (args.from.clone(), args.to.clone());
+            let dry_run = args.write.dry_run;
             async move {
-                let result = copy_file(path.clone(), from, to).await;
+                let result = copy_file(path.clone(), from, to, dry_run).await;
                 (path, result)
             }
         })
@@ -160,8 +182,13 @@ pub async fn run(args: CopyTagsArgs) -> ExitCode {
     if args.run.quiet {
         return report.exit_code();
     }
+    let updated = if args.write.dry_run {
+        "would be updated"
+    } else {
+        "updated"
+    };
     println!(
-        "{} updated, {} unchanged, {} skipped (no {}), {} failed",
+        "{} {updated}, {} unchanged, {} skipped (no {}), {} failed",
         report.updated, report.unchanged, report.skipped, args.from, report.failed
     );
     report.exit_code()
@@ -201,8 +228,13 @@ async fn unique_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
 }
 
 /// Runs [`copy_tag`] on tokio's blocking pool, since tag writes are synchronous file I/O.
-async fn copy_file(path: PathBuf, from: TagField, to: TagField) -> id3::Result<Outcome> {
-    tokio::task::spawn_blocking(move || copy_tag(&path, &from, &to))
+async fn copy_file(
+    path: PathBuf,
+    from: TagField,
+    to: TagField,
+    dry_run: bool,
+) -> id3::Result<Outcome> {
+    tokio::task::spawn_blocking(move || copy_tag(&path, &from, &to, dry_run))
         .await
         .expect("copy task panicked")
 }
@@ -254,7 +286,7 @@ mod tests {
         let path = write_mp3(&dir, Some(&rich_tag()), Version::Id3v24);
         let before = Tag::read_from_path(&path).unwrap();
 
-        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist, false).unwrap();
 
         let after = Tag::read_from_path(&path).unwrap();
         assert_eq!(
@@ -278,7 +310,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = write_mp3(&dir, Some(&rich_tag()), Version::Id3v23);
 
-        let outcome = copy_tag(&path, &TagField::AlbumArtist, &TagField::Artist).unwrap();
+        let outcome = copy_tag(&path, &TagField::AlbumArtist, &TagField::Artist, false).unwrap();
 
         let after = Tag::read_from_path(&path).unwrap();
         assert!(matches!(outcome, Outcome::Updated(_)));
@@ -293,7 +325,7 @@ mod tests {
         tag.set_artist("Lead Artist");
         let path = write_mp3(&dir, Some(&tag), Version::Id3v24);
 
-        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist, false).unwrap();
 
         assert!(matches!(outcome, Outcome::Updated(_)));
         let after = Tag::read_from_path(&path).unwrap();
@@ -309,7 +341,7 @@ mod tests {
         let path = write_mp3(&dir, Some(&tag), Version::Id3v24);
         let bytes = std::fs::read(&path).unwrap();
 
-        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist, false).unwrap();
 
         assert_eq!(outcome, Outcome::Unchanged);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
@@ -323,7 +355,7 @@ mod tests {
         let path = write_mp3(&dir, Some(&tag), Version::Id3v24);
         let bytes = std::fs::read(&path).unwrap();
 
-        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist, false).unwrap();
 
         assert_eq!(outcome, Outcome::SourceEmpty);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
@@ -334,10 +366,28 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = write_mp3(&dir, None, Version::Id3v24);
 
-        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist, false).unwrap();
 
         assert_eq!(outcome, Outcome::SourceEmpty);
         assert_eq!(std::fs::read(&path).unwrap(), AUDIO);
+    }
+
+    #[test]
+    fn dry_run_reports_change_without_writing() {
+        let dir = TempDir::new().unwrap();
+        let path = write_mp3(&dir, Some(&rich_tag()), Version::Id3v24);
+        let bytes = std::fs::read(&path).unwrap();
+
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist, true).unwrap();
+
+        assert_eq!(
+            outcome,
+            Outcome::Updated(Change {
+                old: Some("Old Album Artist".into()),
+                new: "Lead Artist".into(),
+            })
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }
 
     #[tokio::test]
@@ -356,6 +406,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("missing.mp3");
 
-        assert!(copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).is_err());
+        assert!(copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist, false).is_err());
     }
 }

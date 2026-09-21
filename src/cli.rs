@@ -56,6 +56,18 @@ pub struct CopyTagsArgs {
     /// Execution options.
     #[command(flatten)]
     pub run: RunOptions,
+
+    /// Write options.
+    #[command(flatten)]
+    pub write: WriteOptions,
+}
+
+/// Options shared by operations that modify files.
+#[derive(Args)]
+pub struct WriteOptions {
+    /// Show what would change without writing any file.
+    #[arg(short = 'n', long)]
+    pub dry_run: bool,
 }
 
 /// Execution options shared by file-processing operations.
