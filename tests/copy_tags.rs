@@ -203,3 +203,75 @@ fn quiet_hides_summary() {
         .success()
         .stdout("");
 }
+
+#[test]
+fn copies_between_text_comment_and_txxx_fields() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", Some("Artist"), None);
+
+    idk()
+        .args(["copy", "tags", "--from", "title", "--to", "comment"])
+        .arg(&file)
+        .assert()
+        .success();
+    idk()
+        .args([
+            "copy",
+            "tags",
+            "--from",
+            "comment",
+            "--to",
+            "TXXX:Original Title",
+        ])
+        .arg(&file)
+        .assert()
+        .success();
+
+    let tag = tag(&file);
+    let comment = tag.comments().find(|c| c.description.is_empty()).unwrap();
+    assert_eq!(comment.text, "a.mp3");
+    let custom = tag
+        .extended_texts()
+        .find(|t| t.description == "Original Title")
+        .unwrap();
+    assert_eq!(custom.value, "a.mp3");
+    assert_eq!(tag.artist(), Some("Artist"));
+}
+
+#[test]
+fn copies_date_to_year_on_id3v23() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("a.mp3");
+    std::fs::write(&file, [0xFF, 0xFB, 0x90, 0x64, 0x00]).unwrap();
+    let mut tag = Tag::new();
+    tag.add_frame(id3::frame::ExtendedText {
+        description: "released".into(),
+        value: "2021-06-01".into(),
+    });
+    tag.write_to_path(&file, Version::Id3v23).unwrap();
+
+    idk()
+        .args(["copy", "tags", "--from", "txxx:released", "--to", "date"])
+        .arg(&file)
+        .assert()
+        .success()
+        .stdout(contains("1 updated"));
+
+    let tag = self::tag(&file);
+    assert_eq!(tag.version(), Version::Id3v23);
+    assert_eq!(
+        tag.get("TYER").and_then(|f| f.content().text()),
+        Some("2021")
+    );
+}
+
+#[test]
+fn rejects_unknown_field_listing_valid_ones() {
+    idk()
+        .args([
+            "copy", "tags", "--from", "artists", "--to", "title", "x.mp3",
+        ])
+        .assert()
+        .code(2)
+        .stderr(contains("invalid value 'artists'").and(contains("txxx:<description>")));
+}

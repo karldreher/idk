@@ -20,12 +20,21 @@ idk copy tags --from albumartist --to artist *.mp3
 
 The destination tag is overwritten. Other metadata is left untouched, and files whose destination already matches are not rewritten.
 
-| Tag           | ID3v2 frame | Aliases                |
-|---------------|-------------|------------------------|
-| `artist`      | `TPE1`      | `tpe1`                 |
-| `albumartist` | `TPE2`      | `album-artist`, `tpe2` |
+| Tag                  | ID3v2 frame                          | Aliases                |
+|----------------------|--------------------------------------|------------------------|
+| `artist`             | `TPE1`                               | `tpe1`                 |
+| `albumartist`        | `TPE2`                               | `album-artist`, `tpe2` |
+| `title`              | `TIT2`                               | `tit2`                 |
+| `album`              | `TALB`                               | `talb`                 |
+| `tracknumber`        | `TRCK`                               | `track`, `trck`        |
+| `discnumber`         | `TPOS`                               | `disc`, `tpos`         |
+| `date`               | `TDRC` (v2.4) / `TYER`, year only (v2.3) | `year`, `tdrc`, `tyer` |
+| `genre`              | `TCON`                               | `tcon`                 |
+| `composer`           | `TCOM`                               | `tcom`                 |
+| `comment`            | `COMM` (empty description, `eng`)    | `comm`                 |
+| `txxx:<description>` | `TXXX` with that description         |                        |
 
-Tag names are case-insensitive.
+Tag names are case-insensitive; `txxx:` descriptions are matched exactly.
 
 | Option            | Description                                                          |
 |-------------------|----------------------------------------------------------------------|

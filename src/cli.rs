@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
-use crate::tag_field::TagField;
+use crate::tag_field::{TagField, TagFieldParser};
 
 /// The ID3 Knife: automate MP3 ID3 tag operations.
 #[derive(Parser)]
@@ -38,11 +38,11 @@ pub enum CopyTarget {
 #[derive(Args)]
 pub struct CopyTagsArgs {
     /// Tag to read the value from.
-    #[arg(long, value_enum, ignore_case = true)]
+    #[arg(long, value_parser = TagFieldParser)]
     pub from: TagField,
 
     /// Tag to write the value to.
-    #[arg(long, value_enum, ignore_case = true)]
+    #[arg(long, value_parser = TagFieldParser)]
     pub to: TagField,
 
     /// Treat files with an empty source tag as failures instead of skipping them.

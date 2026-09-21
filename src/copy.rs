@@ -26,7 +26,7 @@ pub enum Outcome {
 ///
 /// The destination is overwritten. Every other frame, the tag version and the
 /// audio data are preserved. The file is only written when its tag changes.
-pub fn copy_tag(path: &Path, from: TagField, to: TagField) -> id3::Result<Outcome> {
+pub fn copy_tag(path: &Path, from: &TagField, to: &TagField) -> id3::Result<Outcome> {
     let Some(mut tag) = id3::no_tag_ok(Tag::read_from_path(path))? else {
         return Ok(Outcome::SourceEmpty);
     };
@@ -91,11 +91,13 @@ impl Report {
 pub async fn run(args: CopyTagsArgs) -> ExitCode {
     let files = unique_files(args.files.clone()).await;
     let progress = progress_bar(files.len() as u64, args.run.quiet);
-    let (from, to) = (args.from, args.to);
     let mut results = stream::iter(files)
-        .map(|path| async move {
-            let result = copy_file(path.clone(), from, to).await;
-            (path, result)
+        .map(|path| {
+            let (from, to) = (args.from.clone(), args.to.clone());
+            async move {
+                let result = copy_file(path.clone(), from, to).await;
+                (path, result)
+            }
         })
         .buffer_unordered(args.run.jobs());
 
@@ -151,7 +153,7 @@ async fn unique_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
 
 /// Runs [`copy_tag`] on tokio's blocking pool, since tag writes are synchronous file I/O.
 async fn copy_file(path: PathBuf, from: TagField, to: TagField) -> id3::Result<Outcome> {
-    tokio::task::spawn_blocking(move || copy_tag(&path, from, to))
+    tokio::task::spawn_blocking(move || copy_tag(&path, &from, &to))
         .await
         .expect("copy task panicked")
 }
@@ -203,7 +205,7 @@ mod tests {
         let path = write_mp3(&dir, Some(&rich_tag()), Version::Id3v24);
         let before = Tag::read_from_path(&path).unwrap();
 
-        let outcome = copy_tag(&path, TagField::Artist, TagField::AlbumArtist).unwrap();
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
 
         let after = Tag::read_from_path(&path).unwrap();
         assert_eq!(outcome, Outcome::Updated);
@@ -221,7 +223,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = write_mp3(&dir, Some(&rich_tag()), Version::Id3v23);
 
-        let outcome = copy_tag(&path, TagField::AlbumArtist, TagField::Artist).unwrap();
+        let outcome = copy_tag(&path, &TagField::AlbumArtist, &TagField::Artist).unwrap();
 
         let after = Tag::read_from_path(&path).unwrap();
         assert_eq!(outcome, Outcome::Updated);
@@ -236,7 +238,7 @@ mod tests {
         tag.set_artist("Lead Artist");
         let path = write_mp3(&dir, Some(&tag), Version::Id3v24);
 
-        let outcome = copy_tag(&path, TagField::Artist, TagField::AlbumArtist).unwrap();
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
 
         assert_eq!(outcome, Outcome::Updated);
         let after = Tag::read_from_path(&path).unwrap();
@@ -252,7 +254,7 @@ mod tests {
         let path = write_mp3(&dir, Some(&tag), Version::Id3v24);
         let bytes = std::fs::read(&path).unwrap();
 
-        let outcome = copy_tag(&path, TagField::Artist, TagField::AlbumArtist).unwrap();
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
 
         assert_eq!(outcome, Outcome::Unchanged);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
@@ -266,7 +268,7 @@ mod tests {
         let path = write_mp3(&dir, Some(&tag), Version::Id3v24);
         let bytes = std::fs::read(&path).unwrap();
 
-        let outcome = copy_tag(&path, TagField::Artist, TagField::AlbumArtist).unwrap();
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
 
         assert_eq!(outcome, Outcome::SourceEmpty);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
@@ -277,7 +279,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = write_mp3(&dir, None, Version::Id3v24);
 
-        let outcome = copy_tag(&path, TagField::Artist, TagField::AlbumArtist).unwrap();
+        let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
 
         assert_eq!(outcome, Outcome::SourceEmpty);
         assert_eq!(std::fs::read(&path).unwrap(), AUDIO);
@@ -299,6 +301,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("missing.mp3");
 
-        assert!(copy_tag(&path, TagField::Artist, TagField::AlbumArtist).is_err());
+        assert!(copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).is_err());
     }
 }
