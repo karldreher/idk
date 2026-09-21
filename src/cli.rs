@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
-use crate::tag_field::TagField;
+use crate::tag_field::{TagField, TagFieldParser};
 
 /// The ID3 Knife: automate MP3 ID3 tag operations.
 #[derive(Parser)]
@@ -25,6 +25,8 @@ pub enum Command {
         #[command(subcommand)]
         target: CopyTarget,
     },
+    /// Print the tags of each input file.
+    Show(ShowArgs),
 }
 
 /// Things `idk copy` can copy.
@@ -38,11 +40,11 @@ pub enum CopyTarget {
 #[derive(Args)]
 pub struct CopyTagsArgs {
     /// Tag to read the value from.
-    #[arg(long, value_enum, ignore_case = true)]
+    #[arg(long, value_parser = TagFieldParser)]
     pub from: TagField,
 
     /// Tag to write the value to.
-    #[arg(long, value_enum, ignore_case = true)]
+    #[arg(long, value_parser = TagFieldParser)]
     pub to: TagField,
 
     /// Treat files with an empty source tag as failures instead of skipping them.
@@ -56,6 +58,38 @@ pub struct CopyTagsArgs {
     /// Execution options.
     #[command(flatten)]
     pub run: RunOptions,
+
+    /// Write options.
+    #[command(flatten)]
+    pub write: WriteOptions,
+}
+
+/// Arguments for `idk show`.
+#[derive(Args)]
+pub struct ShowArgs {
+    /// Print a single JSON array instead of readable text.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Only show this field (repeatable).
+    #[arg(long = "field", value_name = "FIELD", value_parser = TagFieldParser)]
+    pub fields: Vec<TagField>,
+
+    /// MP3 files to read.
+    #[arg(required = true, value_name = "FILES")]
+    pub files: Vec<PathBuf>,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
+}
+
+/// Options shared by operations that modify files.
+#[derive(Args)]
+pub struct WriteOptions {
+    /// Show what would change without writing any file.
+    #[arg(short = 'n', long)]
+    pub dry_run: bool,
 }
 
 /// Execution options shared by file-processing operations.
