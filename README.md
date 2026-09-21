@@ -89,6 +89,28 @@ The config file is optional, but whenever one is given it is validated against i
 
 `--config` can't be combined with `--from`/`--to`. A bare `--config` takes the next word as its file unless that word starts with `-`, so put it after the files (or before another flag).
 
+#### Schema
+
+```bash
+idk schema write                                  # writes ./idk.yaml.json
+idk schema write --file my-cool-file.yaml.json
+idk schema validate                               # validates ./idk.yaml
+idk schema validate --config my-cool-file.yaml
+```
+
+Reference the written schema from the top of a config file for editor completion and inline errors (YAML language server, used by VS Code's YAML extension and others):
+
+```yaml
+# yaml-language-server: $schema=./idk.yaml.json
+tags:
+  merge:
+    genres:
+      from: ["Heavy Metal", "Metal"]
+      to: Rock
+```
+
+`schema validate` exits `0` for a valid file and `1` otherwise, listing every violation.
+
 ### Show tags
 
 ```bash

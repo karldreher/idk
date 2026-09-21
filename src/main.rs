@@ -4,6 +4,7 @@ mod copy;
 mod merge;
 mod outcome;
 mod runner;
+mod schema;
 mod show;
 mod tag_field;
 
@@ -12,7 +13,7 @@ use std::process::ExitCode;
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
 
-use cli::{Cli, Command, CopyTagsArgs, CopyTarget, MergeArgs, MergeTarget};
+use cli::{Cli, Command, CopyTagsArgs, CopyTarget, MergeArgs, MergeTarget, SchemaAction};
 use config::{Config, ConfigError};
 use tag_field::TagField;
 
@@ -28,7 +29,7 @@ async fn main() -> ExitCode {
         } => {
             let (from, to) = match copy_fields(&args).await {
                 Ok(fields) => fields,
-                Err(err) => return config_failure(&err),
+                Err(err) => return err.report(),
             };
             if from == to {
                 Cli::command()
@@ -51,20 +52,18 @@ async fn main() -> ExitCode {
                     eprintln!("error: {message}");
                     return ExitCode::from(USAGE_ERROR);
                 }
-                Err(MergeRuleError::Config(err)) => return config_failure(&err),
+                Err(MergeRuleError::Config(err)) => return err.report(),
             };
             merge::run(args, field, rule).await
         }
         Command::Show(args) => show::run(args).await,
+        Command::Schema {
+            action: SchemaAction::Write { file },
+        } => schema::write(&file).await,
+        Command::Schema {
+            action: SchemaAction::Validate { config },
+        } => schema::validate(&config).await,
     }
-}
-
-/// Prints every config error and returns exit code 1.
-fn config_failure(err: &ConfigError) -> ExitCode {
-    for line in err.to_string().lines() {
-        eprintln!("error: {line}");
-    }
-    ExitCode::FAILURE
 }
 
 /// The fields `copy tags` copies between: from the command line, or from `tags.copy` in `--config`.

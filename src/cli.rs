@@ -10,6 +10,9 @@ use crate::tag_field::{TagField, TagFieldParser};
 /// Config file used when `--config` is given without a path.
 pub const DEFAULT_CONFIG: &str = "idk.yaml";
 
+/// Where `idk schema write` puts the schema by default.
+pub const DEFAULT_SCHEMA: &str = "idk.yaml.json";
+
 /// The ID3 Knife: automate MP3 ID3 tag operations.
 #[derive(Parser)]
 #[command(name = "idk", version, about)]
@@ -36,6 +39,29 @@ pub enum Command {
     },
     /// Print the tags of each input file.
     Show(ShowArgs),
+    /// Work with the JSON Schema for config files.
+    Schema {
+        /// What to do.
+        #[command(subcommand)]
+        action: SchemaAction,
+    },
+}
+
+/// Actions for `idk schema`.
+#[derive(Subcommand)]
+pub enum SchemaAction {
+    /// Write the config JSON Schema to a file.
+    Write {
+        /// Where to write the schema.
+        #[arg(long, value_name = "FILE", default_value = DEFAULT_SCHEMA)]
+        file: PathBuf,
+    },
+    /// Validate a config file against the schema.
+    Validate {
+        /// Config file to validate.
+        #[arg(long, value_name = "FILE", default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+    },
 }
 
 /// Fields `idk merge` can merge.

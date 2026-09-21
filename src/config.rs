@@ -16,6 +16,7 @@
 
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::LazyLock;
 
 use jsonschema::error::ValidationErrorKind;
@@ -113,6 +114,16 @@ impl ConfigError {
             path: path.to_owned(),
             messages,
         }
+    }
+}
+
+impl ConfigError {
+    /// Prints every error to stderr and returns exit code 1.
+    pub fn report(&self) -> ExitCode {
+        for line in self.to_string().lines() {
+            eprintln!("error: {line}");
+        }
+        ExitCode::FAILURE
     }
 }
 
