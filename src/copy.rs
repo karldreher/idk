@@ -11,15 +11,76 @@ use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use crate::cli::CopyTagsArgs;
 use crate::tag_field::TagField;
 
+/// A field's value before and after a copy.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Change {
+    /// The destination's previous value, if it had one.
+    pub old: Option<String>,
+    /// The value written to the destination.
+    pub new: String,
+}
+
 /// What happened to a single file.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
     /// The destination tag was written.
-    Updated,
+    Updated(Change),
     /// The destination already held the source value; the file was not written.
     Unchanged,
     /// The source tag is missing or empty; the file was not written.
     SourceEmpty,
+}
+
+/// What copying would do to a file, decided before anything is written.
+pub enum Plan {
+    /// The tag changes; `tag` holds the new state to write.
+    Write {
+        /// The updated tag.
+        tag: Tag,
+        /// The destination field's change.
+        change: Change,
+    },
+    /// The destination already holds the source value.
+    Unchanged,
+    /// The source tag is missing or empty.
+    SourceEmpty,
+}
+
+impl Plan {
+    /// Writes the planned tag to `path` if it changed, and reports the outcome.
+    pub fn apply(self, path: &Path) -> id3::Result<Outcome> {
+        match self {
+            Plan::Write { tag, change } => {
+                tag.write_to_path(path, tag.version())?;
+                Ok(Outcome::Updated(change))
+            }
+            Plan::Unchanged => Ok(Outcome::Unchanged),
+            Plan::SourceEmpty => Ok(Outcome::SourceEmpty),
+        }
+    }
+}
+
+/// Reads the file at `path` and works out the effect of copying `from` into `to`.
+///
+/// Nothing is written; see [`Plan::apply`].
+pub fn plan_copy(path: &Path, from: &TagField, to: &TagField) -> id3::Result<Plan> {
+    let Some(mut tag) = id3::no_tag_ok(Tag::read_from_path(path))? else {
+        return Ok(Plan::SourceEmpty);
+    };
+    let Some(value) = from.read(&tag).filter(|value| !value.is_empty()) else {
+        return Ok(Plan::SourceEmpty);
+    };
+    let old = to.read(&tag);
+    to.write(&mut tag, &value);
+    let new = to.read(&tag);
+    if new == old {
+        return Ok(Plan::Unchanged);
+    }
+    let change = Change {
+        old,
+        new: new.unwrap_or_default(),
+    };
+    Ok(Plan::Write { tag, change })
 }
 
 /// Copies the value of `from` into `to` in the file at `path`.
@@ -27,19 +88,7 @@ pub enum Outcome {
 /// The destination is overwritten. Every other frame, the tag version and the
 /// audio data are preserved. The file is only written when its tag changes.
 pub fn copy_tag(path: &Path, from: &TagField, to: &TagField) -> id3::Result<Outcome> {
-    let Some(mut tag) = id3::no_tag_ok(Tag::read_from_path(path))? else {
-        return Ok(Outcome::SourceEmpty);
-    };
-    let Some(value) = from.read(&tag).filter(|value| !value.is_empty()) else {
-        return Ok(Outcome::SourceEmpty);
-    };
-    let previous = to.read(&tag);
-    to.write(&mut tag, &value);
-    if to.read(&tag) == previous {
-        return Ok(Outcome::Unchanged);
-    }
-    tag.write_to_path(path, tag.version())?;
-    Ok(Outcome::Updated)
+    plan_copy(path, from, to)?.apply(path)
 }
 
 /// Per-run tallies used for the final summary and exit code.
@@ -70,7 +119,7 @@ impl Report {
         progress: &ProgressBar,
     ) {
         match result {
-            Ok(Outcome::Updated) => self.updated += 1,
+            Ok(Outcome::Updated(_)) => self.updated += 1,
             Ok(Outcome::Unchanged) => self.unchanged += 1,
             Ok(Outcome::SourceEmpty) if args.fail_on_empty => {
                 self.failed += 1;
@@ -208,7 +257,13 @@ mod tests {
         let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
 
         let after = Tag::read_from_path(&path).unwrap();
-        assert_eq!(outcome, Outcome::Updated);
+        assert_eq!(
+            outcome,
+            Outcome::Updated(Change {
+                old: Some("Old Album Artist".into()),
+                new: "Lead Artist".into(),
+            })
+        );
         assert_eq!(after.album_artist(), Some("Lead Artist"));
         assert_eq!(
             frames_except(&after, "TPE2"),
@@ -226,7 +281,7 @@ mod tests {
         let outcome = copy_tag(&path, &TagField::AlbumArtist, &TagField::Artist).unwrap();
 
         let after = Tag::read_from_path(&path).unwrap();
-        assert_eq!(outcome, Outcome::Updated);
+        assert!(matches!(outcome, Outcome::Updated(_)));
         assert_eq!(after.artist(), Some("Old Album Artist"));
         assert_eq!(after.version(), Version::Id3v23);
     }
@@ -240,7 +295,7 @@ mod tests {
 
         let outcome = copy_tag(&path, &TagField::Artist, &TagField::AlbumArtist).unwrap();
 
-        assert_eq!(outcome, Outcome::Updated);
+        assert!(matches!(outcome, Outcome::Updated(_)));
         let after = Tag::read_from_path(&path).unwrap();
         assert_eq!(after.album_artist(), Some("Lead Artist"));
     }
