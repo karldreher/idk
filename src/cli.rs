@@ -3,7 +3,7 @@
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgAction, Args, Parser, Subcommand};
 
 use crate::tag_field::{TagField, TagFieldParser};
 
@@ -28,8 +28,68 @@ pub enum Command {
         #[command(subcommand)]
         target: CopyTarget,
     },
+    /// Merge variant values of a field into one value.
+    Merge {
+        /// Which field to merge.
+        #[command(subcommand)]
+        target: MergeTarget,
+    },
     /// Print the tags of each input file.
     Show(ShowArgs),
+}
+
+/// Fields `idk merge` can merge.
+#[derive(Subcommand)]
+pub enum MergeTarget {
+    /// Replace listed genres (TCON) with a single genre.
+    Genres(MergeArgs),
+    /// Replace listed artists (TPE1) with a single artist.
+    Artists(MergeArgs),
+}
+
+/// Arguments for `idk merge genres` and `idk merge artists`.
+#[derive(Args)]
+pub struct MergeArgs {
+    /// Values to replace; case-insensitive, and "" matches a missing or empty value.
+    #[arg(
+        long,
+        value_name = "VALUE",
+        num_args = 1..,
+        action = ArgAction::Append,
+        required_unless_present = "config",
+        conflicts_with = "config"
+    )]
+    pub from: Vec<String>,
+
+    /// Value written in their place.
+    #[arg(
+        long,
+        value_name = "VALUE",
+        required_unless_present = "config",
+        conflicts_with = "config"
+    )]
+    pub to: Option<String>,
+
+    /// Read `--from` / `--to` from `tags.merge.<field>` in a YAML file [default: ./idk.yaml].
+    #[arg(
+        long,
+        value_name = "FILE",
+        num_args = 0..=1,
+        default_missing_value = DEFAULT_CONFIG
+    )]
+    pub config: Option<PathBuf>,
+
+    /// MP3 files to update.
+    #[arg(required = true, value_name = "FILES")]
+    pub files: Vec<PathBuf>,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
+
+    /// Write options.
+    #[command(flatten)]
+    pub write: WriteOptions,
 }
 
 /// Things `idk copy` can copy.

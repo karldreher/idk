@@ -46,20 +46,43 @@ Tag names are case-insensitive; `txxx:` descriptions are matched exactly.
 
 Exit codes: `0` success, `1` one or more files failed, `2` invalid usage.
 
+### Merge genres and artists
+
+Replace variant values with one canonical value. Matching ignores case and surrounding whitespace, `""` matches a missing or empty value, and genre references such as `(9)` match by name (`Metal`).
+
+```bash
+idk merge genres --from "Heavy Metal" Metal --to Rock *.mp3
+idk merge artists --from Beatles "the beatles" --to "The Beatles" *.mp3
+idk merge genres --from "" --to Unknown *.mp3      # fill missing genres
+```
+
+`--from` takes several values, so put `--to` after it (or repeat `--from` per value). `merge genres` changes only `TCON`; `merge artists` changes only `TPE1`. `--dry-run`, `--jobs` and `--quiet` work as for `copy tags`.
+
 ### Config file
 
 Operations can read their settings from YAML instead of flags. The top-level `tags` key is required, unknown keys are rejected, and each command reads only its own section.
 
 ```yaml
 tags:
+  merge:
+    genres:
+      from:
+        - "Heavy Metal"
+        - "Metal"
+      to: Rock              # a single string, not a list
+    artists:
+      from:
+        - "Beatles"
+      to: The Beatles
   copy:
     from: artist
     to: albumartist
 ```
 
 ```bash
-idk copy tags --config my-cool-file.yaml *.mp3
-idk copy tags *.mp3 --config          # bare --config reads ./idk.yaml
+idk merge genres --config my-cool-file.yaml *.mp3
+idk merge artists *.mp3 --config      # bare --config reads ./idk.yaml
+idk copy tags *.mp3 --config
 ```
 
 `--config` can't be combined with `--from`/`--to`. A bare `--config` takes the next word as its file unless that word starts with `-`, so put it after the files (or before another flag). Config errors exit with `2` before any file is touched.

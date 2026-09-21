@@ -2,6 +2,10 @@
 //!
 //! ```yaml
 //! tags:
+//!   merge:
+//!     genres:
+//!       from: ["Heavy Metal", "Metal"]
+//!       to: Rock
 //!   copy:
 //!     from: artist
 //!     to: albumartist
@@ -26,8 +30,30 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Tags {
+    /// Settings for `idk merge`.
+    pub merge: Option<Merge>,
     /// Settings for `idk copy tags`.
     pub copy: Option<CopySpec>,
+}
+
+/// `tags.merge`: one rule per mergeable field.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Merge {
+    /// Rule for `idk merge genres`.
+    pub genres: Option<MergeSpec>,
+    /// Rule for `idk merge artists`.
+    pub artists: Option<MergeSpec>,
+}
+
+/// A merge rule: every value in `from` becomes `to`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MergeSpec {
+    /// Values to replace.
+    pub from: Vec<String>,
+    /// The single replacement value.
+    pub to: String,
 }
 
 /// `tags.copy`: the fields `idk copy tags` copies between.
@@ -77,6 +103,29 @@ impl Config {
         serde_yaml_ng::from_str(text).map_err(|err| err.to_string())
     }
 
+    /// The validated `tags.merge.<key>` section, or an error naming the offending key.
+    pub fn merge(&self, key: &str) -> Result<&MergeSpec, String> {
+        let spec = self
+            .tags
+            .merge
+            .as_ref()
+            .and_then(|merge| match key {
+                "genres" => merge.genres.as_ref(),
+                "artists" => merge.artists.as_ref(),
+                _ => None,
+            })
+            .ok_or_else(|| format!("missing `tags.merge.{key}`"))?;
+        if spec.from.is_empty() {
+            return Err(format!(
+                "tags.merge.{key}.from: must list at least one value"
+            ));
+        }
+        if spec.to.trim().is_empty() {
+            return Err(format!("tags.merge.{key}.to: must not be empty"));
+        }
+        Ok(spec)
+    }
+
     /// The `tags.copy` section, or an error naming the missing key.
     pub fn copy(&self) -> Result<&CopySpec, String> {
         self.tags
@@ -119,6 +168,66 @@ mod tests {
         let err = Config::parse("tags:\n  copy:\n    from: artists\n    to: title\n").unwrap_err();
         assert!(
             err.starts_with("tags.copy: unknown tag \"artists\""),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn parses_merge_sections() {
+        let yaml = "tags:\n  merge:\n    genres:\n      from: [Heavy Metal, Metal]\n      to: Rock\n    artists:\n      from: [Beatles]\n      to: The Beatles\n";
+        let config = Config::parse(yaml).unwrap();
+
+        let genres = config.merge("genres").unwrap();
+        assert_eq!(genres.from, ["Heavy Metal", "Metal"]);
+        assert_eq!(genres.to, "Rock");
+        assert_eq!(config.merge("artists").unwrap().to, "The Beatles");
+    }
+
+    #[test]
+    fn merge_to_must_be_a_single_string() {
+        let err =
+            Config::parse("tags:\n  merge:\n    genres:\n      from: [Metal]\n      to: [Rock]\n")
+                .unwrap_err();
+        assert!(
+            err.starts_with("tags.merge.genres.to: invalid type: sequence"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn validates_merge_values() {
+        let empty_from =
+            Config::parse("tags:\n  merge:\n    genres:\n      from: []\n      to: Rock\n")
+                .unwrap();
+        assert_eq!(
+            empty_from.merge("genres").unwrap_err(),
+            "tags.merge.genres.from: must list at least one value"
+        );
+
+        let empty_to =
+            Config::parse("tags:\n  merge:\n    genres:\n      from: [Metal]\n      to: \" \"\n")
+                .unwrap();
+        assert_eq!(
+            empty_to.merge("genres").unwrap_err(),
+            "tags.merge.genres.to: must not be empty"
+        );
+
+        let config =
+            Config::parse("tags:\n  merge:\n    genres:\n      from: [Metal]\n      to: Rock\n")
+                .unwrap();
+        assert_eq!(
+            config.merge("artists").unwrap_err(),
+            "missing `tags.merge.artists`"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_merge_fields() {
+        let err =
+            Config::parse("tags:\n  merge:\n    genre:\n      from: [Metal]\n      to: Rock\n")
+                .unwrap_err();
+        assert!(
+            err.starts_with("tags.merge: unknown field `genre`"),
             "{err}"
         );
     }
