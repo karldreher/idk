@@ -1,14 +1,13 @@
 //! `idk copy tags`: copy one tag's value into another tag.
 
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
-use futures_util::{StreamExt, stream};
 use id3::Tag;
-use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use indicatif::ProgressBar;
 
 use crate::cli::CopyTagsArgs;
+use crate::runner;
 use crate::tag_field::TagField;
 
 /// A field's value before and after a copy.
@@ -159,25 +158,17 @@ impl Report {
 ///
 /// Files are processed concurrently, up to `--jobs` at a time.
 pub async fn run(args: CopyTagsArgs) -> ExitCode {
-    let files = unique_files(args.files.clone()).await;
-    let progress = progress_bar(files.len() as u64, args.run.quiet);
-    let mut results = stream::iter(files)
-        .map(|path| {
-            let (from, to) = (args.from.clone(), args.to.clone());
-            let dry_run = args.write.dry_run;
-            async move {
-                let result = copy_file(path.clone(), from, to, dry_run).await;
-                (path, result)
-            }
-        })
-        .buffer_unordered(args.run.jobs());
-
+    let (from, to) = (args.from.clone(), args.to.clone());
+    let dry_run = args.write.dry_run;
     let mut report = Report::default();
-    while let Some((path, result)) = results.next().await {
-        report.record(&path, result, &args, &progress);
-        progress.inc(1);
-    }
-    progress.finish_and_clear();
+    runner::process(
+        args.files.clone(),
+        args.run.jobs(),
+        !args.run.quiet,
+        move |path| copy_tag(path, &from, &to, dry_run),
+        |progress, path, result| report.record(&path, result, &args, progress),
+    )
+    .await;
 
     if args.run.quiet {
         return report.exit_code();
@@ -194,56 +185,12 @@ pub async fn run(args: CopyTagsArgs) -> ExitCode {
     report.exit_code()
 }
 
-/// Builds the overall progress bar on stderr.
-///
-/// indicatif hides it automatically when stderr is not a terminal, so piped
-/// and scripted runs stay clean.
-fn progress_bar(len: u64, quiet: bool) -> ProgressBar {
-    if quiet {
-        return ProgressBar::hidden();
-    }
-    let style =
-        ProgressStyle::with_template("{bar:40.cyan/blue} {pos}/{len} files ({per_sec}, eta {eta})")
-            .expect("valid progress template")
-            .progress_chars("##-");
-    ProgressBar::with_draw_target(Some(len), ProgressDrawTarget::stderr()).with_style(style)
-}
-
-/// Drops inputs that resolve to the same file, keeping the first spelling.
-///
-/// Two concurrent writers on one file would race, so duplicates (for example
-/// `a.mp3` and `./a.mp3`) must be collapsed before dispatch.
-async fn unique_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
-    tokio::task::spawn_blocking(move || {
-        let mut seen = HashSet::new();
-        files
-            .into_iter()
-            .filter(|path| {
-                seen.insert(std::fs::canonicalize(path).unwrap_or_else(|_| path.clone()))
-            })
-            .collect()
-    })
-    .await
-    .expect("dedupe task panicked")
-}
-
-/// Runs [`copy_tag`] on tokio's blocking pool, since tag writes are synchronous file I/O.
-async fn copy_file(
-    path: PathBuf,
-    from: TagField,
-    to: TagField,
-    dry_run: bool,
-) -> id3::Result<Outcome> {
-    tokio::task::spawn_blocking(move || copy_tag(&path, &from, &to, dry_run))
-        .await
-        .expect("copy task panicked")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use id3::frame::{Comment, ExtendedText};
     use id3::{Frame, TagLike, Version};
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     /// Bytes standing in for MPEG audio; only their preservation matters.
@@ -388,17 +335,6 @@ mod tests {
             })
         );
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
-    }
-
-    #[tokio::test]
-    async fn collapses_duplicate_inputs() {
-        let dir = TempDir::new().unwrap();
-        let path = write_mp3(&dir, None, Version::Id3v24);
-        let alias = dir.path().join(".").join("song.mp3");
-
-        let files = unique_files(vec![path.clone(), alias, path.clone()]).await;
-
-        assert_eq!(files, vec![path]);
     }
 
     #[test]
