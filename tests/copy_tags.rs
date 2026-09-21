@@ -343,3 +343,110 @@ fn dry_run_exit_code_matches_real_run() {
         .code(1)
         .stderr(contains("empty.mp3: no artist value"));
 }
+
+fn write_config(dir: &TempDir, name: &str, yaml: &str) -> PathBuf {
+    let path = dir.path().join(name);
+    std::fs::write(&path, yaml).unwrap();
+    path
+}
+
+#[test]
+fn reads_fields_from_config_file() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", Some("Artist"), Some("Old"));
+    let config = write_config(
+        &dir,
+        "custom.yaml",
+        "tags:\n  copy:\n    from: artist\n    to: albumartist\n",
+    );
+
+    idk()
+        .args(["copy", "tags", "--config"])
+        .arg(&config)
+        .arg(&file)
+        .assert()
+        .success()
+        .stdout(contains("1 updated"));
+
+    assert_eq!(tag(&file).album_artist(), Some("Artist"));
+}
+
+#[test]
+fn bare_config_flag_reads_idk_yaml_from_working_directory() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", Some("Artist"), None);
+    write_config(
+        &dir,
+        "idk.yaml",
+        "tags:\n  copy:\n    from: artist\n    to: albumartist\n",
+    );
+
+    idk()
+        .current_dir(dir.path())
+        .args(["copy", "tags", "a.mp3", "--config"])
+        .assert()
+        .success();
+
+    assert_eq!(tag(&file).album_artist(), Some("Artist"));
+}
+
+#[test]
+fn config_conflicts_with_from_and_to() {
+    let dir = TempDir::new().unwrap();
+    let config = write_config(
+        &dir,
+        "c.yaml",
+        "tags:\n  copy:\n    from: artist\n    to: title\n",
+    );
+
+    idk()
+        .args(["copy", "tags", "--from", "artist", "--config"])
+        .arg(&config)
+        .arg("x.mp3")
+        .assert()
+        .code(2)
+        .stderr(contains("cannot be used with"));
+}
+
+#[test]
+fn config_errors_exit_2_before_touching_files() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", Some("Artist"), None);
+    let bytes = std::fs::read(&file).unwrap();
+    let cases = [
+        ("tags: {}\n", "missing `tags.copy`"),
+        (
+            "copy:\n  from: artist\n  to: title\n",
+            "unknown field `copy`",
+        ),
+        (
+            "tags:\n  copy:\n    from: artist\n    too: title\n",
+            "tags.copy: unknown field `too`",
+        ),
+        (
+            "tags:\n  copy:\n    from: artist\n    to: TPE1\n",
+            "--from and --to must name different tags",
+        ),
+    ];
+
+    for (yaml, message) in cases {
+        let config = write_config(&dir, "c.yaml", yaml);
+        idk()
+            .args(["copy", "tags", "--config"])
+            .arg(&config)
+            .arg(&file)
+            .assert()
+            .code(2)
+            .stderr(contains(message));
+    }
+
+    idk()
+        .args(["copy", "tags", "--config"])
+        .arg(dir.path().join("missing.yaml"))
+        .arg(&file)
+        .assert()
+        .code(2)
+        .stderr(contains("missing.yaml"));
+
+    assert_eq!(std::fs::read(&file).unwrap(), bytes);
+}

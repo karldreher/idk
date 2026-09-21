@@ -8,6 +8,7 @@ use clap::builder::{PossibleValue, TypedValueParser};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use id3::frame::{Comment, ExtendedText};
 use id3::{Frame, Tag, TagLike, Version};
+use serde::{Deserialize, Deserializer};
 
 /// A tag named by its common field name (as used by MusicBrainz Picard and mutagen).
 ///
@@ -246,6 +247,15 @@ impl fmt::Display for TagField {
                 f.write_str(named.expect("every fixed field is named").name)
             }
         }
+    }
+}
+
+/// Deserializes a field from its name, as accepted on the command line.
+impl<'de> Deserialize<'de> for TagField {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        name.parse()
+            .map_err(|()| serde::de::Error::custom(format!("unknown tag {name:?}")))
     }
 }
 

@@ -50,11 +50,11 @@ pub fn copy_tag(
 ///
 /// Files are processed concurrently, up to `--jobs` at a time. A file with an
 /// empty source is skipped, or fails with `--fail-on-empty`.
-pub async fn run(args: CopyTagsArgs) -> ExitCode {
-    let (from, to) = (args.from.clone(), args.to.clone());
+pub async fn run(args: CopyTagsArgs, from: TagField, to: TagField) -> ExitCode {
+    let summary_label = format!("no {from}");
     let dry_run = args.write.dry_run;
     let fail_on_empty = args.fail_on_empty;
-    let mut report = Report::new(args.to.clone(), dry_run);
+    let mut report = Report::new(to.clone(), dry_run);
     runner::process(
         args.files.clone(),
         args.run.jobs(),
@@ -69,7 +69,7 @@ pub async fn run(args: CopyTagsArgs) -> ExitCode {
     .await;
 
     if !args.run.quiet {
-        println!("{}", report.summary(Some(&format!("no {}", args.from))));
+        println!("{}", report.summary(Some(&summary_label)));
     }
     report.exit_code()
 }

@@ -46,6 +46,24 @@ Tag names are case-insensitive; `txxx:` descriptions are matched exactly.
 
 Exit codes: `0` success, `1` one or more files failed, `2` invalid usage.
 
+### Config file
+
+Operations can read their settings from YAML instead of flags. The top-level `tags` key is required, unknown keys are rejected, and each command reads only its own section.
+
+```yaml
+tags:
+  copy:
+    from: artist
+    to: albumartist
+```
+
+```bash
+idk copy tags --config my-cool-file.yaml *.mp3
+idk copy tags *.mp3 --config          # bare --config reads ./idk.yaml
+```
+
+`--config` can't be combined with `--from`/`--to`. A bare `--config` takes the next word as its file unless that word starts with `-`, so put it after the files (or before another flag). Config errors exit with `2` before any file is touched.
+
 ### Show tags
 
 ```bash

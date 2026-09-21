@@ -7,6 +7,9 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::tag_field::{TagField, TagFieldParser};
 
+/// Config file used when `--config` is given without a path.
+pub const DEFAULT_CONFIG: &str = "idk.yaml";
+
 /// The ID3 Knife: automate MP3 ID3 tag operations.
 #[derive(Parser)]
 #[command(name = "idk", version, about)]
@@ -40,12 +43,31 @@ pub enum CopyTarget {
 #[derive(Args)]
 pub struct CopyTagsArgs {
     /// Tag to read the value from.
-    #[arg(long, value_parser = TagFieldParser)]
-    pub from: TagField,
+    #[arg(
+        long,
+        value_parser = TagFieldParser,
+        required_unless_present = "config",
+        conflicts_with = "config"
+    )]
+    pub from: Option<TagField>,
 
     /// Tag to write the value to.
-    #[arg(long, value_parser = TagFieldParser)]
-    pub to: TagField,
+    #[arg(
+        long,
+        value_parser = TagFieldParser,
+        required_unless_present = "config",
+        conflicts_with = "config"
+    )]
+    pub to: Option<TagField>,
+
+    /// Read `--from` / `--to` from `tags.copy` in a YAML file [default: ./idk.yaml].
+    #[arg(
+        long,
+        value_name = "FILE",
+        num_args = 0..=1,
+        default_missing_value = DEFAULT_CONFIG
+    )]
+    pub config: Option<PathBuf>,
 
     /// Treat files with an empty source tag as failures instead of skipping them.
     #[arg(long)]
