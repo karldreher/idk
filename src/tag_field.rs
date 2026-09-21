@@ -3,6 +3,7 @@
 use std::fmt;
 
 use clap::ValueEnum;
+use id3::{Tag, TagLike};
 
 /// A tag named by its common field name (as used by MusicBrainz Picard and mutagen).
 ///
@@ -24,6 +25,18 @@ impl TagField {
             TagField::Artist => "TPE1",
             TagField::AlbumArtist => "TPE2",
         }
+    }
+
+    /// Reads this field's value from `tag`, if present.
+    pub fn read(self, tag: &Tag) -> Option<String> {
+        tag.get(self.frame_id())
+            .and_then(|frame| frame.content().text())
+            .map(str::to_owned)
+    }
+
+    /// Writes `value` into this field, replacing any existing value.
+    pub fn write(self, tag: &mut Tag, value: &str) {
+        tag.set_text(self.frame_id(), value);
     }
 }
 

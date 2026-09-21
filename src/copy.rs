@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use futures_util::{StreamExt, stream};
-use id3::{Frame, Tag, TagLike};
+use id3::Tag;
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 use crate::cli::CopyTagsArgs;
@@ -22,7 +22,7 @@ pub enum Outcome {
     SourceEmpty,
 }
 
-/// Copies the `from` frame into the `to` frame of the file at `path`.
+/// Copies the value of `from` into `to` in the file at `path`.
 ///
 /// The destination is overwritten. Every other frame, the tag version and the
 /// audio data are preserved. The file is only written when its tag changes.
@@ -30,20 +30,14 @@ pub fn copy_tag(path: &Path, from: TagField, to: TagField) -> id3::Result<Outcom
     let Some(mut tag) = id3::no_tag_ok(Tag::read_from_path(path))? else {
         return Ok(Outcome::SourceEmpty);
     };
-    let Some(content) = tag
-        .get(from.frame_id())
-        .map(|frame| frame.content().clone())
-        .filter(|content| content.text().is_some_and(|text| !text.is_empty()))
-    else {
+    let Some(value) = from.read(&tag).filter(|value| !value.is_empty()) else {
         return Ok(Outcome::SourceEmpty);
     };
-    if tag
-        .get(to.frame_id())
-        .is_some_and(|frame| *frame.content() == content)
-    {
+    let previous = to.read(&tag);
+    to.write(&mut tag, &value);
+    if to.read(&tag) == previous {
         return Ok(Outcome::Unchanged);
     }
-    tag.add_frame(Frame::with_content(to.frame_id(), content));
     tag.write_to_path(path, tag.version())?;
     Ok(Outcome::Updated)
 }
@@ -165,8 +159,8 @@ async fn copy_file(path: PathBuf, from: TagField, to: TagField) -> id3::Result<O
 #[cfg(test)]
 mod tests {
     use super::*;
-    use id3::Version;
     use id3::frame::{Comment, ExtendedText};
+    use id3::{Frame, TagLike, Version};
     use tempfile::TempDir;
 
     /// Bytes standing in for MPEG audio; only their preservation matters.
