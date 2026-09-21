@@ -1,6 +1,7 @@
 mod cli;
 mod copy;
 mod runner;
+mod show;
 mod tag_field;
 
 use std::process::ExitCode;
@@ -27,5 +28,6 @@ async fn main() -> ExitCode {
             }
             copy::run(args).await
         }
+        Command::Show(args) => show::run(args).await,
     }
 }

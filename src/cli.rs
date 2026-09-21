@@ -25,6 +25,8 @@ pub enum Command {
         #[command(subcommand)]
         target: CopyTarget,
     },
+    /// Print the tags of each input file.
+    Show(ShowArgs),
 }
 
 /// Things `idk copy` can copy.
@@ -60,6 +62,26 @@ pub struct CopyTagsArgs {
     /// Write options.
     #[command(flatten)]
     pub write: WriteOptions,
+}
+
+/// Arguments for `idk show`.
+#[derive(Args)]
+pub struct ShowArgs {
+    /// Print a single JSON array instead of readable text.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Only show this field (repeatable).
+    #[arg(long = "field", value_name = "FIELD", value_parser = TagFieldParser)]
+    pub fields: Vec<TagField>,
+
+    /// MP3 files to read.
+    #[arg(required = true, value_name = "FILES")]
+    pub files: Vec<PathBuf>,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
 }
 
 /// Options shared by operations that modify files.

@@ -7,7 +7,7 @@ use id3::Tag;
 use indicatif::ProgressBar;
 
 use crate::cli::CopyTagsArgs;
-use crate::runner;
+use crate::runner::{self, Order};
 use crate::tag_field::TagField;
 
 /// A field's value before and after a copy.
@@ -164,6 +164,7 @@ pub async fn run(args: CopyTagsArgs) -> ExitCode {
     runner::process(
         args.files.clone(),
         args.run.jobs(),
+        Order::Completion,
         !args.run.quiet,
         move |path| copy_tag(path, &from, &to, dry_run),
         |progress, path, result| report.record(&path, result, &args, progress),

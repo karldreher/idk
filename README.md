@@ -46,6 +46,24 @@ Tag names are case-insensitive; `txxx:` descriptions are matched exactly.
 
 Exit codes: `0` success, `1` one or more files failed, `2` invalid usage.
 
+### Show tags
+
+```bash
+idk show song.mp3
+idk show --json *.mp3 | jq '.[].tags.albumartist'
+idk show --field artist --field albumartist *.mp3
+```
+
+Known frames are shown by the field names above; other frames by their frame ID (comments with a description as `COMM:<description>`). Pictures are summarized as `image/jpeg, 12345 bytes`. Output follows input order.
+
+With `--json`, stdout is one array:
+
+```json
+[{ "path": "song.mp3", "version": "2.4", "tags": { "artist": "Artist", "title": "Title" } }]
+```
+
+Files without an ID3v2 tag have `"version": null` and empty `tags`. `-j/--jobs` and `-q/--quiet` apply as for `copy tags`.
+
 ## Release
 
 1. Bump `version` in `Cargo.toml` and merge to `main`.

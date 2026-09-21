@@ -7,7 +7,7 @@ use std::str::FromStr;
 use clap::builder::{PossibleValue, TypedValueParser};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use id3::frame::{Comment, ExtendedText};
-use id3::{Tag, TagLike, Version};
+use id3::{Frame, Tag, TagLike, Version};
 
 /// A tag named by its common field name (as used by MusicBrainz Picard and mutagen).
 ///
@@ -126,6 +126,26 @@ impl TagField {
             TagField::Genre => Some("TCON"),
             TagField::Composer => Some("TCOM"),
             TagField::Date | TagField::Comment | TagField::Txxx(_) => None,
+        }
+    }
+
+    /// The field a frame belongs to, if idk has a name for it.
+    pub fn of_frame(frame: &Frame) -> Option<TagField> {
+        match frame.id() {
+            "TDRC" | "TYER" => Some(TagField::Date),
+            "COMM" => frame
+                .content()
+                .comment()
+                .filter(|comment| comment.description.is_empty())
+                .map(|_| TagField::Comment),
+            "TXXX" => frame
+                .content()
+                .extended_text()
+                .map(|extended| TagField::Txxx(extended.description.clone())),
+            id => NAMED
+                .iter()
+                .find(|named| named.field.text_frame() == Some(id))
+                .map(|named| named.field.clone()),
         }
     }
 
@@ -338,6 +358,35 @@ mod tests {
                 "{field}"
             );
         }
+    }
+
+    #[test]
+    fn maps_frames_back_to_fields() {
+        let mut tag = Tag::new();
+        TagField::Title.write(&mut tag, "t");
+        TagField::Txxx("custom".into()).write(&mut tag, "x");
+        TagField::Comment.write(&mut tag, "c");
+        tag.add_frame(Comment {
+            lang: "eng".into(),
+            description: "note".into(),
+            text: "n".into(),
+        });
+        tag.set_text("TYER", "1999");
+        tag.set_text("TENC", "encoder");
+
+        let fields: Vec<_> = tag.frames().map(TagField::of_frame).collect();
+
+        assert_eq!(
+            fields,
+            [
+                Some(TagField::Title),
+                Some(TagField::Txxx("custom".into())),
+                Some(TagField::Comment),
+                None,
+                Some(TagField::Date),
+                None,
+            ]
+        );
     }
 
     #[test]

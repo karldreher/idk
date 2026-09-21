@@ -5,16 +5,26 @@ use std::path::{Path, PathBuf};
 use std::pin::pin;
 use std::sync::Arc;
 
-use futures_util::{StreamExt, stream};
+use futures_util::StreamExt;
+use futures_util::stream::{self, BoxStream};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+
+/// The order in which per-file results are delivered.
+pub enum Order {
+    /// Results arrive in input order; a slow file holds back later ones.
+    Input,
+    /// Results arrive as soon as each file finishes.
+    Completion,
+}
 
 /// Runs `op` on every file on tokio's blocking pool, at most `jobs` at a time.
 ///
-/// Duplicate inputs are processed once. Results arrive as each file finishes. Each result is passed to `on_result`
+/// Duplicate inputs are processed once. Each result is passed to `on_result`
 /// along with the progress bar, which should be used to print without tearing it.
 pub async fn process<T, Op>(
     files: Vec<PathBuf>,
     jobs: usize,
+    order: Order,
     show_progress: bool,
     op: Op,
     mut on_result: impl FnMut(&ProgressBar, PathBuf, T),
@@ -35,7 +45,11 @@ pub async fn process<T, Op>(
             (path, result)
         }
     });
-    let mut results = pin!(tasks.buffer_unordered(jobs));
+    let results: BoxStream<'_, (PathBuf, T)> = match order {
+        Order::Input => tasks.buffered(jobs).boxed(),
+        Order::Completion => tasks.buffer_unordered(jobs).boxed(),
+    };
+    let mut results = pin!(results);
     while let Some((path, result)) = results.next().await {
         on_result(&progress, path, result);
         progress.inc(1);
@@ -91,5 +105,25 @@ mod tests {
         let files = unique_files(vec![path.clone(), alias, path.clone()]).await;
 
         assert_eq!(files, vec![path]);
+    }
+
+    #[tokio::test]
+    async fn input_order_is_preserved() {
+        let files: Vec<PathBuf> = (0..50)
+            .map(|i| PathBuf::from(format!("missing-{i}")))
+            .collect();
+        let mut seen = Vec::new();
+
+        process(
+            files.clone(),
+            8,
+            Order::Input,
+            false,
+            |_| (),
+            |_, path, ()| seen.push(path),
+        )
+        .await;
+
+        assert_eq!(seen, files);
     }
 }
