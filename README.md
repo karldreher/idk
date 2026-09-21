@@ -68,4 +68,4 @@ Files without an ID3v2 tag have `"version": null` and empty `tags`. `-j/--jobs` 
 
 1. Bump `version` in `Cargo.toml` and merge to `main`.
 2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
-3. The Release workflow builds macOS (arm64, x86_64), Linux x86_64 and Windows x86_64 archives and attaches them to a draft GitHub Release for review.
+3. The Release workflow builds macOS (arm64, x86_64), Linux x86_64 and Windows x86_64 archives and publishes a GitHub Release with them attached.
