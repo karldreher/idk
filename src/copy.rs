@@ -6,6 +6,7 @@ use std::process::ExitCode;
 
 use futures_util::{StreamExt, stream};
 use id3::{Frame, Tag, TagLike};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 use crate::cli::CopyTagsArgs;
 use crate::tag_field::TagField;
@@ -57,19 +58,34 @@ struct Report {
 }
 
 impl Report {
-    /// Records one file's result, printing failures to stderr.
-    fn record(&mut self, path: &Path, result: id3::Result<Outcome>, args: &CopyTagsArgs) {
+    /// Non-zero when any file failed.
+    fn exit_code(&self) -> ExitCode {
+        if self.failed > 0 {
+            ExitCode::FAILURE
+        } else {
+            ExitCode::SUCCESS
+        }
+    }
+
+    /// Records one file's result, printing failures to stderr above the progress bar.
+    fn record(
+        &mut self,
+        path: &Path,
+        result: id3::Result<Outcome>,
+        args: &CopyTagsArgs,
+        progress: &ProgressBar,
+    ) {
         match result {
             Ok(Outcome::Updated) => self.updated += 1,
             Ok(Outcome::Unchanged) => self.unchanged += 1,
             Ok(Outcome::SourceEmpty) if args.fail_on_empty => {
                 self.failed += 1;
-                eprintln!("error: {}: no {} value", path.display(), args.from);
+                progress.suspend(|| eprintln!("error: {}: no {} value", path.display(), args.from));
             }
             Ok(Outcome::SourceEmpty) => self.skipped += 1,
             Err(err) => {
                 self.failed += 1;
-                eprintln!("error: {}: {err}", path.display());
+                progress.suspend(|| eprintln!("error: {}: {err}", path.display()));
             }
         }
     }
@@ -80,6 +96,7 @@ impl Report {
 /// Files are processed concurrently, up to `--jobs` at a time.
 pub async fn run(args: CopyTagsArgs) -> ExitCode {
     let files = unique_files(args.files.clone()).await;
+    let progress = progress_bar(files.len() as u64, args.run.quiet);
     let (from, to) = (args.from, args.to);
     let mut results = stream::iter(files)
         .map(|path| async move {
@@ -90,18 +107,34 @@ pub async fn run(args: CopyTagsArgs) -> ExitCode {
 
     let mut report = Report::default();
     while let Some((path, result)) = results.next().await {
-        report.record(&path, result, &args);
+        report.record(&path, result, &args, &progress);
+        progress.inc(1);
     }
+    progress.finish_and_clear();
 
+    if args.run.quiet {
+        return report.exit_code();
+    }
     println!(
         "{} updated, {} unchanged, {} skipped (no {}), {} failed",
         report.updated, report.unchanged, report.skipped, args.from, report.failed
     );
-    if report.failed > 0 {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
+    report.exit_code()
+}
+
+/// Builds the overall progress bar on stderr.
+///
+/// indicatif hides it automatically when stderr is not a terminal, so piped
+/// and scripted runs stay clean.
+fn progress_bar(len: u64, quiet: bool) -> ProgressBar {
+    if quiet {
+        return ProgressBar::hidden();
     }
+    let style =
+        ProgressStyle::with_template("{bar:40.cyan/blue} {pos}/{len} files ({per_sec}, eta {eta})")
+            .expect("valid progress template")
+            .progress_chars("##-");
+    ProgressBar::with_draw_target(Some(len), ProgressDrawTarget::stderr()).with_style(style)
 }
 
 /// Drops inputs that resolve to the same file, keeping the first spelling.

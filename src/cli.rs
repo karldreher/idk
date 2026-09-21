@@ -64,6 +64,10 @@ pub struct RunOptions {
     /// Maximum number of files processed concurrently [default: available CPUs].
     #[arg(short, long, value_name = "N")]
     pub jobs: Option<NonZeroUsize>,
+
+    /// Hide the progress bar and summary; errors are still reported.
+    #[arg(short, long)]
+    pub quiet: bool,
 }
 
 impl RunOptions {
