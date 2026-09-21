@@ -1,0 +1,15 @@
+[package]
+name = "id3-knife"
+version = "0.1.0"
+edition = "2024"
+description = "The ID3 Knife, CLI tool for MP3 metadata edits"
+license = "MIT"
+repository = "https://github.com/karldreher/idk"
+readme = "README.md"
+
+[[bin]]
+name = "idk"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
