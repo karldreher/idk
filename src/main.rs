@@ -1,10 +1,30 @@
-use clap::Parser;
+mod cli;
+mod copy;
+mod tag_field;
 
-#[derive(Parser)]
-#[command(name = "idk", version, about)]
-struct Cli {}
+use std::process::ExitCode;
+
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser};
+
+use cli::{Cli, Command, CopyTarget};
 
 #[tokio::main]
-async fn main() {
-    let _cli = Cli::parse();
+async fn main() -> ExitCode {
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Copy {
+            target: CopyTarget::Tags(args),
+        } => {
+            if args.from == args.to {
+                Cli::command()
+                    .error(
+                        ErrorKind::ArgumentConflict,
+                        "--from and --to must name different tags",
+                    )
+                    .exit();
+            }
+            copy::run(args).await
+        }
+    }
 }
