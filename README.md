@@ -85,7 +85,9 @@ idk merge artists *.mp3 --config      # bare --config reads ./idk.yaml
 idk copy tags *.mp3 --config
 ```
 
-`--config` can't be combined with `--from`/`--to`. A bare `--config` takes the next word as its file unless that word starts with `-`, so put it after the files (or before another flag). Config errors exit with `2` before any file is touched.
+The config file is optional, but whenever one is given it is validated against idk's JSON Schema before any audio file is touched. Every violation is reported with its key path (for example `tags.merge.genres.to: ["Rock"] is not of type "string"`), and the run exits with `1`.
+
+`--config` can't be combined with `--from`/`--to`. A bare `--config` takes the next word as its file unless that word starts with `-`, so put it after the files (or before another flag).
 
 ### Show tags
 

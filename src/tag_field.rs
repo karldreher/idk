@@ -1,5 +1,6 @@
 //! Tags idk can operate on, and their ID3v2 frame mapping.
 
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::fmt;
 use std::str::FromStr;
@@ -8,6 +9,7 @@ use clap::builder::{PossibleValue, TypedValueParser};
 use clap::error::{ContextKind, ContextValue, ErrorKind};
 use id3::frame::{Comment, ExtendedText};
 use id3::{Frame, Tag, TagLike, Version};
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer};
 
 /// A tag named by its common field name (as used by MusicBrainz Picard and mutagen).
@@ -256,6 +258,57 @@ impl<'de> Deserialize<'de> for TagField {
         let name = String::deserialize(deserializer)?;
         name.parse()
             .map_err(|()| serde::de::Error::custom(format!("unknown tag {name:?}")))
+    }
+}
+
+/// Schema for a field name: a case-insensitive pattern accepting every name,
+/// alias and `txxx:<description>`, with canonical names as examples for editors.
+impl JsonSchema for TagField {
+    fn schema_name() -> Cow<'static, str> {
+        "TagField".into()
+    }
+
+    fn json_schema(_: &mut SchemaGenerator) -> Schema {
+        let names: Vec<&str> = NAMED.iter().map(|named| named.name).collect();
+        let alternatives: Vec<String> = NAMED
+            .iter()
+            .flat_map(|named| std::iter::once(named.name).chain(named.aliases.iter().copied()))
+            .map(case_insensitive)
+            .collect();
+        let pattern = format!(
+            "^(?:{}|{}.+)$",
+            alternatives.join("|"),
+            case_insensitive(TXXX_PREFIX)
+        );
+        json_schema!({
+            "description": "A tag name (e.g. artist, albumartist, TPE1) or txxx:<description>",
+            "type": "string",
+            "pattern": pattern,
+            "examples": names,
+        })
+    }
+}
+
+/// A regex matching `literal` in any letter case, e.g. `ab-` → `[aA][bB]-`.
+fn case_insensitive(literal: &str) -> String {
+    literal
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphabetic() {
+                format!("[{}{}]", c.to_ascii_lowercase(), c.to_ascii_uppercase())
+            } else {
+                regex_escape(c)
+            }
+        })
+        .collect()
+}
+
+/// Escapes a regex metacharacter; field names only contain `-`, `:` and digits besides letters.
+fn regex_escape(c: char) -> String {
+    if r"\.+*?()|[]{}^$".contains(c) {
+        format!("\\{c}")
+    } else {
+        c.to_string()
     }
 }
 

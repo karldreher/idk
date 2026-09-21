@@ -168,18 +168,22 @@ fn empty_source_fills_missing_genre() {
 }
 
 #[test]
-fn config_and_usage_errors_exit_2_before_touching_files() {
+fn invalid_config_exits_1_before_touching_files() {
     let dir = TempDir::new().unwrap();
     let file = mp3(&dir, "a.mp3", Some("Metal"), None);
     let bytes = std::fs::read(&file).unwrap();
     let cases = [
         (
             "tags:\n  merge:\n    genres:\n      from: [Metal]\n      to: [Rock]\n",
-            "tags.merge.genres.to: invalid type: sequence",
+            "tags.merge.genres.to: [\"Rock\"] is not of type \"string\"",
         ),
         (
             "tags:\n  merge:\n    genres:\n      from: []\n      to: Rock\n",
-            "tags.merge.genres.from: must list at least one value",
+            "tags.merge.genres.from: [] has less than 1 item",
+        ),
+        (
+            "tags:\n  merge:\n    genres:\n      from: [Metal]\n      to: \" \"\n",
+            "tags.merge.genres.to: must not be blank",
         ),
         (
             "tags:\n  merge:\n    artists:\n      from: [a]\n      to: b\n",
@@ -187,11 +191,11 @@ fn config_and_usage_errors_exit_2_before_touching_files() {
         ),
         (
             "tags:\n  merge:\n    genre:\n      from: [Metal]\n      to: Rock\n",
-            "tags.merge: unknown field `genre`",
+            "tags.merge: Additional properties are not allowed ('genre' was unexpected)",
         ),
         (
             "merge:\n  genres:\n    from: [Metal]\n    to: Rock\n",
-            "unknown field `merge`",
+            "('merge' was unexpected)",
         ),
     ];
 
@@ -202,9 +206,18 @@ fn config_and_usage_errors_exit_2_before_touching_files() {
             .arg(&config)
             .arg(&file)
             .assert()
-            .code(2)
+            .code(1)
             .stderr(contains(message));
     }
+
+    assert_eq!(std::fs::read(&file).unwrap(), bytes);
+}
+
+#[test]
+fn usage_errors_exit_2_before_touching_files() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", Some("Metal"), None);
+    let bytes = std::fs::read(&file).unwrap();
 
     idk()
         .args(["merge", "genres", "--from", "Metal", "--to", " "])

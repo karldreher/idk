@@ -409,7 +409,7 @@ fn config_conflicts_with_from_and_to() {
 }
 
 #[test]
-fn config_errors_exit_2_before_touching_files() {
+fn invalid_config_exits_1_before_touching_files() {
     let dir = TempDir::new().unwrap();
     let file = mp3(&dir, "a.mp3", Some("Artist"), None);
     let bytes = std::fs::read(&file).unwrap();
@@ -417,15 +417,19 @@ fn config_errors_exit_2_before_touching_files() {
         ("tags: {}\n", "missing `tags.copy`"),
         (
             "copy:\n  from: artist\n  to: title\n",
-            "unknown field `copy`",
+            "\"tags\" is a required property",
         ),
         (
             "tags:\n  copy:\n    from: artist\n    too: title\n",
-            "tags.copy: unknown field `too`",
+            "tags.copy: Additional properties are not allowed ('too' was unexpected)",
+        ),
+        (
+            "tags:\n  copy:\n    from: artists\n    to: title\n",
+            "tags.copy.from: \"artists\" is not a known tag name",
         ),
         (
             "tags:\n  copy:\n    from: artist\n    to: TPE1\n",
-            "--from and --to must name different tags",
+            "tags.copy: from and to must name different tags",
         ),
     ];
 
@@ -436,7 +440,7 @@ fn config_errors_exit_2_before_touching_files() {
             .arg(&config)
             .arg(&file)
             .assert()
-            .code(2)
+            .code(1)
             .stderr(contains(message));
     }
 
@@ -445,7 +449,7 @@ fn config_errors_exit_2_before_touching_files() {
         .arg(dir.path().join("missing.yaml"))
         .arg(&file)
         .assert()
-        .code(2)
+        .code(1)
         .stderr(contains("missing.yaml"));
 
     assert_eq!(std::fs::read(&file).unwrap(), bytes);
