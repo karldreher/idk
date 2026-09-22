@@ -1,7 +1,6 @@
 //! `idk show`: print the tags of each input file.
 
 use std::collections::{HashMap, HashSet};
-use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -183,7 +182,7 @@ fn print_json_item(item: &Value, first: bool) {
 ///
 /// Files are read concurrently, but output follows input order.
 pub async fn run(args: ShowArgs) -> ExitCode {
-    let show_progress = !args.json && !args.run.quiet && std::io::stdout().is_terminal();
+    let show_progress = !args.json && args.run.progress_for_stdout();
     let fields = args.fields.clone();
     let verbose = args.verbose;
     let inputs = input::resolve(args.input.clone()).await;
@@ -216,11 +215,7 @@ pub async fn run(args: ShowArgs) -> ExitCode {
         // `first` is still set only when no file produced output.
         println!("{}", if first { "[]" } else { "\n]" });
     }
-    if failed {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    }
+    runner::exit_code(failed)
 }
 
 #[cfg(test)]
