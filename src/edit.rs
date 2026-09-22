@@ -10,7 +10,7 @@ use clap::error::ErrorKind;
 
 use crate::cli::{ClearTagsArgs, InputArgs, RunOptions, SetTagsArgs, WriteOptions, usage_error};
 use crate::input;
-use crate::outcome::{Change, Plan, Report};
+use crate::outcome::{Plan, Report};
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
 
@@ -25,7 +25,7 @@ pub fn plan_set(path: &Path, assignments: &[(TagField, String)]) -> id3::Result<
         field.write(&mut tag, value);
     }
     let fields = assignments.iter().map(|(field, _)| field);
-    Ok(plan_changes(fields, before, tag))
+    Ok(Plan::from_diff(fields, &before, tag))
 }
 
 /// Reads the file at `path` and works out the effect of removing every field in `fields`.
@@ -39,22 +39,7 @@ pub fn plan_clear(path: &Path, fields: &[TagField]) -> id3::Result<Plan> {
     for field in fields {
         field.remove(&mut tag);
     }
-    Ok(plan_changes(fields.iter(), before, tag))
-}
-
-/// A plan writing `after` for every field whose value differs from `before`.
-fn plan_changes<'a>(fields: impl Iterator<Item = &'a TagField>, before: Tag, after: Tag) -> Plan {
-    let changes: Vec<Change> = fields
-        .filter_map(|field| Change::between(field, &before, &after))
-        .collect();
-    if changes.is_empty() {
-        Plan::Unchanged
-    } else {
-        Plan::Write {
-            tag: after,
-            changes,
-        }
-    }
+    Ok(Plan::from_diff(fields, &before, tag))
 }
 
 /// Runs `idk set tags` over every input file and returns the process exit code.
@@ -125,6 +110,7 @@ async fn run_plans(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outcome::Change;
     use crate::outcome::Outcome;
     use id3::TagLike;
     use std::path::PathBuf;

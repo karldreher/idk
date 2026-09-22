@@ -10,7 +10,7 @@ use id3::{Tag, TagLike, Version};
 use crate::cli::{MergeArgs, MergeTarget};
 use crate::config::{Config, ConfigError};
 use crate::input;
-use crate::outcome::{Change, Plan, Report};
+use crate::outcome::{Plan, Report};
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
 
@@ -62,13 +62,7 @@ pub fn plan_merge(path: &Path, field: &TagField, rule: &Rule) -> id3::Result<Pla
     let mut tag = tag.unwrap_or_else(|| Tag::with_version(Version::Id3v24));
     let before = tag.clone();
     field.write(&mut tag, &rule.to);
-    match Change::between(field, &before, &tag) {
-        Some(change) => Ok(Plan::Write {
-            tag,
-            changes: vec![change],
-        }),
-        None => Ok(Plan::Unchanged),
-    }
+    Ok(Plan::from_diff([field], &before, tag))
 }
 
 /// The merge rule: `--from`/`--to`, or `tags.merge.<key>` in `--config`.
@@ -123,6 +117,7 @@ pub async fn run(target: MergeTarget) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outcome::Change;
     use crate::outcome::Outcome;
     use id3::Frame;
     use std::path::PathBuf;

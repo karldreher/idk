@@ -10,7 +10,7 @@ use clap::error::ErrorKind;
 use crate::cli::{CopyTagsArgs, usage_error};
 use crate::config::{Config, ConfigError};
 use crate::input;
-use crate::outcome::{Change, Outcome, Plan, Report};
+use crate::outcome::{Outcome, Plan, Report};
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
 
@@ -61,13 +61,7 @@ pub fn plan_copy(path: &Path, from: &TagField, to: &TagField) -> id3::Result<Pla
     };
     let before = tag.clone();
     to.write(&mut tag, &value);
-    match Change::between(to, &before, &tag) {
-        Some(change) => Ok(Plan::Write {
-            tag,
-            changes: vec![change],
-        }),
-        None => Ok(Plan::Unchanged),
-    }
+    Ok(Plan::from_diff([to], &before, tag))
 }
 
 /// Copies the value of `from` into `to` in the file at `path`.
@@ -120,6 +114,7 @@ pub async fn run(args: CopyTagsArgs) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outcome::Change;
     use id3::frame::{Comment, ExtendedText};
     use id3::{Frame, TagLike, Version};
     use std::path::PathBuf;

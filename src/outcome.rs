@@ -19,18 +19,6 @@ pub struct Change {
     pub new: Option<String>,
 }
 
-impl Change {
-    /// Compares `field` in `before` and `after`, returning the change if its value differs.
-    pub fn between(field: &TagField, before: &Tag, after: &Tag) -> Option<Change> {
-        let (old, new) = (field.read(before), field.read(after));
-        (old != new).then(|| Change {
-            field: field.clone(),
-            old,
-            new,
-        })
-    }
-}
-
 /// What happened to a single file.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -58,6 +46,34 @@ pub enum Plan {
 }
 
 impl Plan {
+    /// The plan for an edit that turned `before` into `after`, listing each of `fields`
+    /// whose value changed. `Unchanged` when none did, so the file is not rewritten.
+    pub fn from_diff<'a>(
+        fields: impl IntoIterator<Item = &'a TagField>,
+        before: &Tag,
+        after: Tag,
+    ) -> Plan {
+        let changes: Vec<Change> = fields
+            .into_iter()
+            .filter_map(|field| {
+                let (old, new) = (field.read(before), field.read(&after));
+                (old != new).then(|| Change {
+                    field: field.clone(),
+                    old,
+                    new,
+                })
+            })
+            .collect();
+        if changes.is_empty() {
+            Plan::Unchanged
+        } else {
+            Plan::Write {
+                tag: after,
+                changes,
+            }
+        }
+    }
+
     /// Writes the planned tag to `path` if it changed, and reports the outcome.
     ///
     /// With `dry_run`, nothing is written but the outcome is the same.
