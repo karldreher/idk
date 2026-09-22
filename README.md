@@ -137,7 +137,7 @@ idk show --json *.mp3 | jq '.[].tags.albumartist'
 idk show --field artist --field albumartist *.mp3
 ```
 
-Known frames are shown by the field names above; other frames by their frame ID (comments with a description as `COMM:<description>`). Pictures are summarized as `image/jpeg, 12345 bytes`. Output follows input order.
+Known frames are shown by the field names above; other frames by their frame ID (comments with a description as `COMM:<description>`). Pictures are summarized as `image/jpeg, 12345 bytes`. `PRIV` (vendor private data, e.g. Amazon's), `TCOP` (copyright) and `TSSE` (encoder settings) are hidden unless `-v/--verbose` is given; with it, `PRIV` is summarized as `www.amazon.com, 1024 bytes`. Output follows input order.
 
 With `--json`, stdout is one array:
 

@@ -20,8 +20,14 @@ pub struct FileTags {
     pub entries: Vec<(String, String)>,
 }
 
+/// Frames omitted unless `--verbose`: vendor data (e.g. Amazon's PRIV), copyright
+/// notices and encoder settings, which are rarely useful and often very large.
+const VERBOSE_ONLY: &[&str] = &["PRIV", "TCOP", "TSSE"];
+
 /// Reads the tags of the file at `path`, keeping only `fields` when it is non-empty.
-pub fn read_tags(path: &Path, fields: &[TagField]) -> id3::Result<FileTags> {
+///
+/// Frames in [`VERBOSE_ONLY`] are skipped unless `verbose` is set.
+pub fn read_tags(path: &Path, fields: &[TagField], verbose: bool) -> id3::Result<FileTags> {
     let Some(tag) = id3::no_tag_ok(Tag::read_from_path(path))? else {
         return Ok(FileTags {
             version: None,
@@ -30,6 +36,9 @@ pub fn read_tags(path: &Path, fields: &[TagField]) -> id3::Result<FileTags> {
     };
     let mut entries: Vec<(String, String)> = Vec::new();
     for frame in tag.frames() {
+        if !verbose && VERBOSE_ONLY.contains(&frame.id()) {
+            continue;
+        }
         let field = TagField::of_frame(frame);
         if !fields.is_empty() && !field.as_ref().is_some_and(|field| fields.contains(field)) {
             continue;
@@ -64,7 +73,7 @@ fn unique_key(entries: &[(String, String)], key: String) -> String {
         .expect("unbounded range")
 }
 
-/// Human-readable value of a frame. Pictures are summarized, never dumped.
+/// Human-readable value of a frame. Pictures and private data are summarized, never dumped.
 fn frame_value(frame: &Frame) -> String {
     match frame.content() {
         // ID3v2.4 separates multiple values with NUL.
@@ -74,6 +83,11 @@ fn frame_value(frame: &Frame) -> String {
         Content::Unknown(unknown) if matches!(frame.id(), "APIC" | "PIC") => {
             picture_summary(frame.id(), &unknown.data)
         }
+        Content::Private(private) => format!(
+            "{}, {} bytes",
+            private.owner_identifier,
+            private.private_data.len()
+        ),
         content => content.to_string(),
     }
 }
@@ -140,6 +154,7 @@ fn render_json(path: &Path, tags: FileTags) -> Value {
 pub async fn run(args: ShowArgs) -> ExitCode {
     let show_progress = !args.json && !args.run.quiet && std::io::stdout().is_terminal();
     let fields = args.fields.clone();
+    let verbose = args.verbose;
     let mut json_files = Vec::new();
     let mut failed = false;
     let mut first = true;
@@ -149,7 +164,7 @@ pub async fn run(args: ShowArgs) -> ExitCode {
         args.run.jobs(),
         Order::Input,
         show_progress,
-        move |path| read_tags(path, &fields),
+        move |path| read_tags(path, &fields, verbose),
         |progress, path: PathBuf, result| match result {
             Ok(tags) if args.json => json_files.push(render_json(&path, tags)),
             Ok(tags) => {
@@ -209,7 +224,7 @@ mod tests {
             });
         });
 
-        let tags = read_tags(&path, &[]).unwrap();
+        let tags = read_tags(&path, &[], false).unwrap();
 
         assert_eq!(tags.version, Some(Version::Id3v24));
         assert_eq!(
@@ -232,7 +247,7 @@ mod tests {
             tag.set_album("Album");
         });
 
-        let tags = read_tags(&path, &[TagField::Album, TagField::Artist]).unwrap();
+        let tags = read_tags(&path, &[TagField::Album, TagField::Artist], false).unwrap();
 
         assert_eq!(
             tags.entries,
@@ -249,7 +264,7 @@ mod tests {
             tag.set_text("TYER", "2021");
         });
 
-        let tags = read_tags(&path, &[]).unwrap();
+        let tags = read_tags(&path, &[], false).unwrap();
 
         assert_eq!(
             tags.entries,
@@ -262,12 +277,40 @@ mod tests {
     }
 
     #[test]
+    fn hides_private_copyright_and_encoder_frames_unless_verbose() {
+        let dir = TempDir::new().unwrap();
+        let path = tagged(&dir, |tag| {
+            tag.set_artist("Artist");
+            tag.add_frame(id3::frame::Private {
+                owner_identifier: "www.amazon.com".into(),
+                private_data: vec![0; 512],
+            });
+            tag.set_text("TCOP", "");
+            tag.set_text("TSSE", "LAME 3.100");
+        });
+
+        let quiet = read_tags(&path, &[], false).unwrap();
+        assert_eq!(quiet.entries, [entry("artist", "Artist")]);
+
+        let verbose = read_tags(&path, &[], true).unwrap();
+        assert_eq!(
+            verbose.entries,
+            [
+                entry("artist", "Artist"),
+                entry("PRIV", "www.amazon.com, 512 bytes"),
+                entry("TCOP", ""),
+                entry("TSSE", "LAME 3.100"),
+            ]
+        );
+    }
+
+    #[test]
     fn untagged_file_has_no_version_or_entries() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("song.mp3");
         std::fs::write(&path, [0xFF, 0xFB]).unwrap();
 
-        let tags = read_tags(&path, &[]).unwrap();
+        let tags = read_tags(&path, &[], false).unwrap();
 
         assert_eq!(
             tags,

@@ -123,3 +123,46 @@ fn does_not_modify_files() {
         modified
     );
 }
+
+#[test]
+fn verbose_reveals_hidden_frames() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("amazon.mp3");
+    std::fs::write(&file, [0xFF, 0xFB, 0x90, 0x64, 0x00]).unwrap();
+    let mut tag = Tag::new();
+    tag.set_artist("Artist");
+    tag.add_frame(id3::frame::Private {
+        owner_identifier: "www.amazon.com".into(),
+        private_data: vec![0; 1024],
+    });
+    tag.set_text("TCOP", "");
+    tag.set_text("TSSE", "LAME");
+    tag.write_to_path(&file, Version::Id3v24).unwrap();
+
+    let default = idk().args(["show", "--json"]).arg(&file).output().unwrap();
+    let default: Value = serde_json::from_slice(&default.stdout).unwrap();
+    assert_eq!(default[0]["tags"], json!({ "artist": "Artist" }));
+
+    let verbose = idk()
+        .args(["show", "--json", "-v"])
+        .arg(&file)
+        .output()
+        .unwrap();
+    let verbose: Value = serde_json::from_slice(&verbose.stdout).unwrap();
+    assert_eq!(
+        verbose[0]["tags"],
+        json!({
+            "artist": "Artist",
+            "PRIV": "www.amazon.com, 1024 bytes",
+            "TCOP": "",
+            "TSSE": "LAME",
+        })
+    );
+
+    idk()
+        .arg("show")
+        .arg(&file)
+        .assert()
+        .success()
+        .stdout(contains("PRIV").not().and(contains("artist: Artist")));
+}

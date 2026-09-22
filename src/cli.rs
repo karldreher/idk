@@ -256,6 +256,10 @@ pub struct ShowArgs {
     #[arg(long = "field", value_name = "FIELD", value_parser = TagFieldParser)]
     pub fields: Vec<TagField>,
 
+    /// Also show frames hidden by default: PRIV (private data), TCOP (copyright), TSSE (encoder settings).
+    #[arg(short, long)]
+    pub verbose: bool,
+
     /// MP3 files to read.
     #[arg(required = true, value_name = "FILES")]
     pub files: Vec<PathBuf>,
