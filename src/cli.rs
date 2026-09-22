@@ -37,6 +37,12 @@ pub enum Command {
         #[command(subcommand)]
         target: MergeTarget,
     },
+    /// Remove fields.
+    Clear {
+        /// What to clear.
+        #[command(subcommand)]
+        target: ClearTarget,
+    },
     /// Set fields to fixed values.
     Set {
         /// What to set.
@@ -68,6 +74,33 @@ pub enum SchemaAction {
         #[arg(long, value_name = "FILE", default_value = DEFAULT_CONFIG)]
         config: PathBuf,
     },
+}
+
+/// Things `idk clear` can clear.
+#[derive(Subcommand)]
+pub enum ClearTarget {
+    /// Remove one or more fields.
+    Tags(ClearTagsArgs),
+}
+
+/// Arguments for `idk clear tags`.
+#[derive(Args)]
+pub struct ClearTagsArgs {
+    /// Field to remove (repeatable).
+    #[arg(long = "field", value_name = "FIELD", value_parser = TagFieldParser, required = true)]
+    pub fields: Vec<TagField>,
+
+    /// MP3 files to update.
+    #[arg(required = true, value_name = "FILES")]
+    pub files: Vec<PathBuf>,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
+
+    /// Write options.
+    #[command(flatten)]
+    pub write: WriteOptions,
 }
 
 /// Things `idk set` can set.

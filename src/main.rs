@@ -15,7 +15,8 @@ use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
 
 use cli::{
-    Cli, Command, CopyTagsArgs, CopyTarget, MergeArgs, MergeTarget, SchemaAction, SetTarget,
+    ClearTarget, Cli, Command, CopyTagsArgs, CopyTarget, MergeArgs, MergeTarget, SchemaAction,
+    SetTarget,
 };
 use config::{Config, ConfigError};
 use tag_field::TagField;
@@ -58,6 +59,12 @@ async fn main() -> ExitCode {
                 Err(MergeRuleError::Config(err)) => return err.report(),
             };
             merge::run(args, field, rule).await
+        }
+        Command::Clear {
+            target: ClearTarget::Tags(args),
+        } => {
+            reject_duplicate_fields(args.fields.iter());
+            edit::run_clear(args).await
         }
         Command::Set {
             target: SetTarget::Tags(args),

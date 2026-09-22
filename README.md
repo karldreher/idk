@@ -55,6 +55,14 @@ idk set tags --field "txxx:Source=CD" --dry-run *.mp3
 
 `--field FIELD=VALUE` is repeatable and split on the first `=`, so values may contain `=`. Fields take the names in the table above. Files without an ID3v2 tag get a new ID3v2.4 tag; files whose fields already match are not rewritten. An empty value (`genre=`) or naming a field twice is a usage error.
 
+### Clear tags
+
+```bash
+idk clear tags --field comment --field "txxx:Source" *.mp3
+```
+
+`--field FIELD` is repeatable. `date` removes both `TDRC` and `TYER`; `comment` removes only comments with an empty description; `txxx:<description>` removes only that description. Files without the field (or without a tag) are unchanged and not rewritten.
+
 ### Merge genres and artists
 
 Replace variant values with one canonical value. Matching ignores case and surrounding whitespace, `""` matches a missing or empty value, and genre references such as `(9)` match by name (`Metal`).

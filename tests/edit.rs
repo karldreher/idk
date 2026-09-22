@@ -157,3 +157,85 @@ fn set_usage_errors_exit_2() {
             .stderr(contains(message));
     }
 }
+
+#[test]
+fn clears_fields_and_leaves_others() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", |tag| {
+        tag.set_genre("Rock");
+        tag.set_text("TDRC", "2021");
+        tag.add_frame(id3::frame::Comment {
+            lang: "eng".into(),
+            description: "".into(),
+            text: "stray".into(),
+        });
+        tag.add_frame(id3::frame::ExtendedText {
+            description: "Source".into(),
+            value: "CD".into(),
+        });
+    });
+
+    idk()
+        .args(["clear", "tags", "--field", "comment", "--field", "year"])
+        .args(["--field", "txxx:Source"])
+        .arg(&file)
+        .assert()
+        .success()
+        .stdout(contains("1 updated, 0 unchanged, 0 failed"));
+
+    let tag = tag(&file);
+    assert_eq!(tag.comments().count(), 0);
+    assert!(tag.get("TDRC").is_none());
+    assert_eq!(tag.extended_texts().count(), 0);
+    assert_eq!(tag.genre(), Some("Rock"));
+    assert_eq!(tag.title(), Some("a.mp3"));
+}
+
+#[test]
+fn clear_dry_run_shows_removals() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", |tag| tag.set_genre("Rock"));
+    let bytes = std::fs::read(&file).unwrap();
+
+    idk()
+        .args(["clear", "tags", "--field", "genre", "--dry-run"])
+        .arg(&file)
+        .assert()
+        .success()
+        .stdout(contains(r#"a.mp3: genre "Rock" -> (none)"#).and(contains("1 would be updated")));
+
+    assert_eq!(std::fs::read(&file).unwrap(), bytes);
+}
+
+#[test]
+fn clear_on_untagged_or_absent_field_is_unchanged() {
+    let dir = TempDir::new().unwrap();
+    let bare = dir.path().join("bare.mp3");
+    std::fs::write(&bare, AUDIO).unwrap();
+    let tagged = mp3(&dir, "a.mp3", |_| {});
+
+    idk()
+        .args(["clear", "tags", "--field", "genre"])
+        .args([&bare, &tagged])
+        .assert()
+        .success()
+        .stdout(contains("0 updated, 2 unchanged"));
+
+    assert_eq!(std::fs::read(&bare).unwrap(), AUDIO);
+}
+
+#[test]
+fn clear_usage_errors_exit_2() {
+    idk()
+        .args([
+            "clear", "tags", "--field", "genre", "--field", "TCON", "x.mp3",
+        ])
+        .assert()
+        .code(2)
+        .stderr(contains("--field genre given more than once"));
+    idk()
+        .args(["clear", "tags", "--field", "genres", "x.mp3"])
+        .assert()
+        .code(2)
+        .stderr(contains("invalid value 'genres'"));
+}

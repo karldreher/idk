@@ -1,4 +1,4 @@
-//! `idk set tags`: write fixed values into fields.
+//! `idk set tags` and `idk clear tags`: write fixed values into fields, or remove them.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use id3::{Tag, Version};
 
-use crate::cli::{RunOptions, SetTagsArgs, WriteOptions};
+use crate::cli::{ClearTagsArgs, RunOptions, SetTagsArgs, WriteOptions};
 use crate::outcome::{Change, Plan, Report};
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
@@ -23,6 +23,20 @@ pub fn plan_set(path: &Path, assignments: &[(TagField, String)]) -> id3::Result<
     }
     let fields = assignments.iter().map(|(field, _)| field);
     Ok(plan_changes(fields, before, tag))
+}
+
+/// Reads the file at `path` and works out the effect of removing every field in `fields`.
+///
+/// Nothing is written; see [`Plan::apply`]. A file without a tag is unchanged.
+pub fn plan_clear(path: &Path, fields: &[TagField]) -> id3::Result<Plan> {
+    let Some(mut tag) = id3::no_tag_ok(Tag::read_from_path(path))? else {
+        return Ok(Plan::Unchanged);
+    };
+    let before = tag.clone();
+    for field in fields {
+        field.remove(&mut tag);
+    }
+    Ok(plan_changes(fields.iter(), before, tag))
 }
 
 /// A plan writing `after` for every field whose value differs from `before`.
@@ -45,6 +59,15 @@ pub async fn run_set(args: SetTagsArgs) -> ExitCode {
     let assignments = Arc::new(args.fields);
     run_plans(args.files, &args.run, &args.write, move |path| {
         plan_set(path, &assignments)
+    })
+    .await
+}
+
+/// Runs `idk clear tags` over every input file and returns the process exit code.
+pub async fn run_clear(args: ClearTagsArgs) -> ExitCode {
+    let fields = Arc::new(args.fields);
+    run_plans(args.files, &args.run, &args.write, move |path| {
+        plan_clear(path, &fields)
     })
     .await
 }
@@ -160,6 +183,57 @@ mod tests {
 
         assert_eq!(set(&path, &[(TagField::Genre, "Rock")]), Outcome::Unchanged);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
+
+    fn clear(path: &Path, fields: &[TagField]) -> Outcome {
+        plan_clear(path, fields)
+            .unwrap()
+            .apply(path, false)
+            .unwrap()
+    }
+
+    #[test]
+    fn clears_fields_and_reports_each_removal() {
+        let dir = TempDir::new().unwrap();
+        let path = mp3(
+            &dir,
+            |tag| {
+                tag.set_genre("Rock");
+                tag.set_artist("Artist");
+                tag.set_text("TENC", "Encoder");
+            },
+            Version::Id3v24,
+        );
+
+        let outcome = clear(&path, &[TagField::Genre, TagField::Comment]);
+
+        assert_eq!(
+            outcome,
+            Outcome::Updated(vec![Change {
+                field: TagField::Genre,
+                old: Some("Rock".into()),
+                new: None
+            }])
+        );
+        let tag = Tag::read_from_path(&path).unwrap();
+        assert_eq!(tag.genre(), None);
+        assert_eq!(tag.artist(), Some("Artist"));
+        assert!(tag.get("TENC").is_some());
+        assert!(std::fs::read(&path).unwrap().ends_with(AUDIO));
+    }
+
+    #[test]
+    fn clearing_absent_fields_or_untagged_files_is_unchanged() {
+        let dir = TempDir::new().unwrap();
+        let path = mp3(&dir, |tag| tag.set_artist("Artist"), Version::Id3v24);
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(clear(&path, &[TagField::Genre]), Outcome::Unchanged);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+
+        let bare = dir.path().join("bare.mp3");
+        std::fs::write(&bare, AUDIO).unwrap();
+        assert_eq!(clear(&bare, &[TagField::Genre]), Outcome::Unchanged);
+        assert_eq!(std::fs::read(&bare).unwrap(), AUDIO);
     }
 
     #[test]
