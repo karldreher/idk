@@ -5,11 +5,49 @@ use std::process::ExitCode;
 
 use id3::Tag;
 
-use crate::cli::CopyTagsArgs;
+use clap::error::ErrorKind;
+
+use crate::cli::{CopyTagsArgs, usage_error};
+use crate::config::{Config, ConfigError};
 use crate::input;
 use crate::outcome::{Change, Outcome, Plan, Report};
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
+
+/// The fields to copy between: `--from`/`--to`, or `tags.copy` in `--config`.
+///
+/// Naming the same field twice is a usage error on the command line (exit 2)
+/// and a config error in a config file (exit 1).
+async fn fields(args: &CopyTagsArgs) -> Result<(TagField, TagField), ConfigError> {
+    let Some(path) = &args.config else {
+        let from = args
+            .from
+            .clone()
+            .expect("clap requires --from without --config");
+        let to = args
+            .to
+            .clone()
+            .expect("clap requires --to without --config");
+        if from == to {
+            usage_error(
+                ErrorKind::ArgumentConflict,
+                "--from and --to must name different tags",
+            );
+        }
+        return Ok((from, to));
+    };
+    let config = Config::load(path).await?;
+    let copy = config
+        .copy()
+        .map_err(|message| ConfigError::new(path, message))?;
+    if copy.from == copy.to {
+        return Err(ConfigError::new(
+            path,
+            "tags.copy: from and to must name different tags",
+        ));
+    }
+    Ok((copy.from.clone(), copy.to.clone()))
+}
 
 /// Reads the file at `path` and works out the effect of copying `from` into `to`.
 ///
@@ -49,7 +87,11 @@ pub fn copy_tag(
 ///
 /// Files are processed concurrently, up to `--jobs` at a time. A file with an
 /// empty source is skipped, or fails with `--fail-on-empty`.
-pub async fn run(args: CopyTagsArgs, from: TagField, to: TagField) -> ExitCode {
+pub async fn run(args: CopyTagsArgs) -> ExitCode {
+    let (from, to) = match fields(&args).await {
+        Ok(fields) => fields,
+        Err(err) => return err.report(),
+    };
     let summary_label = format!("no {from}");
     let dry_run = args.write.dry_run;
     let fail_on_empty = args.fail_on_empty;
