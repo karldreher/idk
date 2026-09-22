@@ -17,7 +17,7 @@ use id3::{Tag, Version};
 use serde_json::Value;
 
 use crate::cli::ApplyArgs;
-use crate::outcome::{Change, Plan, Report, snapshot};
+use crate::outcome::{Plan, Report, snapshot};
 use crate::runner::{self, Order};
 use crate::show::display_value;
 use crate::tag_field::TagField;
@@ -160,16 +160,11 @@ pub fn plan_apply(path: &Path, edits: &[Edit]) -> id3::Result<Plan> {
             None => field.remove(&mut tag),
         }
     }
-    let changes: Vec<Change> = edits
-        .iter()
-        .zip(old)
-        .filter_map(|((field, _), old)| Change::since(field, old, &tag))
-        .collect();
-    Ok(if changes.is_empty() {
-        Plan::Unchanged
-    } else {
-        Plan::Write { tag, changes }
-    })
+    Ok(Plan::from_diff(
+        edits.iter().map(|(field, _)| field),
+        old,
+        tag,
+    ))
 }
 
 /// Reads and validates the edit source (`-` for stdin).

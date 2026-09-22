@@ -19,21 +19,7 @@ pub struct Change {
     pub new: Option<String>,
 }
 
-impl Change {
-    /// Compares `old`, the value `field` held before an edit, with its value in `after`.
-    ///
-    /// Returns the change if the value differs.
-    pub fn since(field: &TagField, old: Option<String>, after: &Tag) -> Option<Change> {
-        let new = field.read(after);
-        (old != new).then(|| Change {
-            field: field.clone(),
-            old,
-            new,
-        })
-    }
-}
-
-/// The current values of `fields` in `tag`, to hand to [`Change::since`] after an edit.
+/// The current values of `fields` in `tag`, to hand to [`Plan::from_diff`] after an edit.
 ///
 /// Reading values up front avoids cloning the whole tag, which can carry large pictures.
 pub fn snapshot<'a>(fields: impl Iterator<Item = &'a TagField>, tag: &Tag) -> Vec<Option<String>> {
@@ -67,6 +53,36 @@ pub enum Plan {
 }
 
 impl Plan {
+    /// The plan for an edit of `fields` that left `after`, given their `old` values from
+    /// [`snapshot`]. Lists each field whose value changed; `Unchanged` when none did, so
+    /// the file is not rewritten.
+    pub fn from_diff<'a>(
+        fields: impl IntoIterator<Item = &'a TagField>,
+        old: Vec<Option<String>>,
+        after: Tag,
+    ) -> Plan {
+        let changes: Vec<Change> = fields
+            .into_iter()
+            .zip(old)
+            .filter_map(|(field, old)| {
+                let new = field.read(&after);
+                (old != new).then(|| Change {
+                    field: field.clone(),
+                    old,
+                    new,
+                })
+            })
+            .collect();
+        if changes.is_empty() {
+            Plan::Unchanged
+        } else {
+            Plan::Write {
+                tag: after,
+                changes,
+            }
+        }
+    }
+
     /// Writes the planned tag to `path` if it changed, and reports the outcome.
     ///
     /// With `dry_run`, nothing is written but the outcome is the same.
