@@ -76,11 +76,11 @@ pub enum MergeTarget {
 /// Arguments for `idk merge genres` and `idk merge artists`.
 #[derive(Args)]
 pub struct MergeArgs {
-    /// Values to replace; case-insensitive, and "" matches a missing or empty value.
+    /// Comma-separated values to replace (repeatable); case-insensitive, and "" matches a missing or empty value.
     #[arg(
         long,
-        value_name = "VALUE",
-        num_args = 1..,
+        value_name = "VALUES",
+        value_delimiter = ',',
         action = ArgAction::Append,
         required_unless_present = "config",
         conflicts_with = "config"

@@ -63,8 +63,7 @@ fn merges_genres_from_cli() {
             "merge",
             "genres",
             "--from",
-            "Heavy Metal",
-            "Metal",
+            "Heavy Metal, Metal",
             "--to",
             "Rock",
         ])
@@ -80,9 +79,10 @@ fn merges_genres_from_cli() {
 }
 
 #[test]
-fn repeated_from_flags_are_combined() {
+fn comma_separated_from_is_followed_directly_by_files() {
     let dir = TempDir::new().unwrap();
-    let file = mp3(&dir, "a.mp3", Some("Metal"), None);
+    let heavy = mp3(&dir, "a.mp3", Some("Heavy Metal"), None);
+    let metal = mp3(&dir, "b.mp3", Some("Metal"), None);
 
     idk()
         .args([
@@ -91,16 +91,56 @@ fn repeated_from_flags_are_combined() {
             "--to",
             "Rock",
             "--from",
+            "Heavy Metal,Metal",
+        ])
+        .args([&heavy, &metal])
+        .assert()
+        .success()
+        .stdout(contains("2 updated"));
+
+    assert_eq!(tag(&heavy).genre(), Some("Rock"));
+    assert_eq!(tag(&metal).genre(), Some("Rock"));
+}
+
+#[test]
+fn repeated_from_flags_are_combined() {
+    let dir = TempDir::new().unwrap();
+    let heavy = mp3(&dir, "a.mp3", Some("Heavy Metal"), None);
+    let metal = mp3(&dir, "b.mp3", Some("Metal"), None);
+
+    idk()
+        .args([
+            "merge",
+            "genres",
+            "--from",
             "Heavy Metal",
             "--from",
             "Metal",
+            "--to",
+            "Rock",
         ])
-        .arg("--")
-        .arg(&file)
+        .args([&heavy, &metal])
         .assert()
         .success();
 
-    assert_eq!(tag(&file).genre(), Some("Rock"));
+    assert_eq!(tag(&heavy).genre(), Some("Rock"));
+    assert_eq!(tag(&metal).genre(), Some("Rock"));
+}
+
+#[test]
+fn leading_comma_adds_empty_source_to_fill_missing_values() {
+    let dir = TempDir::new().unwrap();
+    let missing = mp3(&dir, "a.mp3", None, Some("Artist"));
+    let metal = mp3(&dir, "b.mp3", Some("Metal"), None);
+
+    idk()
+        .args(["merge", "genres", "--from", ",Metal", "--to", "Rock"])
+        .args([&missing, &metal])
+        .assert()
+        .success();
+
+    assert_eq!(tag(&missing).genre(), Some("Rock"));
+    assert_eq!(tag(&metal).genre(), Some("Rock"));
 }
 
 #[test]

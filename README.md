@@ -51,12 +51,13 @@ Exit codes: `0` success, `1` one or more files failed, `2` invalid usage.
 Replace variant values with one canonical value. Matching ignores case and surrounding whitespace, `""` matches a missing or empty value, and genre references such as `(9)` match by name (`Metal`).
 
 ```bash
-idk merge genres --from "Heavy Metal" Metal --to Rock *.mp3
-idk merge artists --from Beatles "the beatles" --to "The Beatles" *.mp3
-idk merge genres --from "" --to Unknown *.mp3      # fill missing genres
+idk merge genres --from "Heavy Metal,Metal" --to Rock *.mp3
+idk merge artists --from "Beatles,the beatles" --to "The Beatles" *.mp3
+idk merge genres --from "" --to Unknown *.mp3            # fill missing genres
+idk merge genres --from ",Metal" --to Rock *.mp3         # fill missing and merge Metal
 ```
 
-`--from` takes several values, so put `--to` after it (or repeat `--from` per value). `merge genres` changes only `TCON`; `merge artists` changes only `TPE1`. `--dry-run`, `--jobs` and `--quiet` work as for `copy tags`.
+`--from` takes comma-separated values and can be repeated (`--from "Heavy Metal" --from Metal`); spaces around commas are ignored. For values that contain a comma, use the config file. `merge genres` changes only `TCON`; `merge artists` changes only `TPE1`. `--dry-run`, `--jobs` and `--quiet` work as for `copy tags`.
 
 ### Config file
 
