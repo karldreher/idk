@@ -3,14 +3,13 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::ExitCode;
-use std::sync::Arc;
 
 use id3::{Tag, TagLike, Version};
 
-use crate::cli::MergeArgs;
+use crate::cli::{MergeArgs, MergeTarget};
+use crate::config::{Config, ConfigError};
 use crate::input;
-use crate::outcome::{Change, Plan, Report};
-use crate::runner::{self, Order};
+use crate::outcome::{Plan, run_writes};
 use crate::tag_field::TagField;
 
 /// A merge rule with its `from` values normalized for matching.
@@ -61,61 +60,48 @@ pub fn plan_merge(path: &Path, field: &TagField, rule: &Rule) -> id3::Result<Pla
     let mut tag = tag.unwrap_or_else(|| Tag::with_version(Version::Id3v24));
     let before = tag.clone();
     field.write(&mut tag, &rule.to);
-    match Change::between(field, &before, &tag) {
-        Some(change) => Ok(Plan::Write {
-            tag,
-            changes: vec![change],
-        }),
-        None => Ok(Plan::Unchanged),
-    }
+    Ok(Plan::from_diff([field], &before, tag))
 }
 
-/// Runs `idk merge` for `field` over every input file and returns the process exit code.
-pub async fn run(args: MergeArgs, field: TagField, rule: Rule) -> ExitCode {
-    let dry_run = args.write.dry_run;
-    let mut report = Report::new(dry_run);
-    let rule = Arc::new(rule);
-    let task_field = field.clone();
-    let inputs = input::resolve(args.input.clone()).await;
-    report.add_failures(inputs.failures);
-    runner::process(
-        inputs.files,
-        args.run.jobs(),
-        Order::Completion,
-        !args.run.quiet,
-        move |path| {
-            plan_merge(path, &task_field, &rule)
-                .and_then(|plan| plan.apply(path, dry_run))
-                .map_err(|err| err.to_string())
-        },
-        |progress, path, result| report.record(&path, result, progress),
-    )
-    .await;
+/// The merge rule: `--from`/`--to`, or `tags.merge.<key>` in `--config`.
+async fn rule(args: &MergeArgs, key: &str) -> Result<Rule, ConfigError> {
+    let Some(path) = &args.config else {
+        let to = args
+            .to
+            .as_deref()
+            .expect("clap requires --to without --config");
+        return Ok(Rule::new(&args.from, to));
+    };
+    let config = Config::load(path).await?;
+    let spec = config
+        .merge(key)
+        .map_err(|message| ConfigError::new(path, message))?;
+    Ok(Rule::new(&spec.from, &spec.to))
+}
 
-    if !args.run.quiet {
-        println!("{}", report.summary(None));
-    }
-    report.exit_code()
+/// Runs `idk merge genres|artists` over every input file and returns the process exit code.
+pub async fn run(target: MergeTarget) -> ExitCode {
+    let (field, key, args) = target.into_parts();
+    let rule = match rule(&args, key).await {
+        Ok(rule) => rule,
+        Err(err) => return err.report(),
+    };
+    let inputs = input::resolve(args.input).await;
+    run_writes(inputs, &args.run, &args.write, None, move |path| {
+        plan_merge(path, &field, &rule).map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outcome::Change;
     use crate::outcome::Outcome;
+    use crate::test_support::{AUDIO, mp3};
     use id3::Frame;
-    use std::path::PathBuf;
+
     use tempfile::TempDir;
-
-    const AUDIO: &[u8] = &[0xFF, 0xFB, 0x90, 0x64, 0x00, 0x11];
-
-    fn mp3(dir: &TempDir, build: impl FnOnce(&mut Tag)) -> PathBuf {
-        let path = dir.path().join("song.mp3");
-        std::fs::write(&path, AUDIO).unwrap();
-        let mut tag = Tag::new();
-        build(&mut tag);
-        tag.write_to_path(&path, Version::Id3v24).unwrap();
-        path
-    }
 
     fn rule(from: &[&str], to: &str) -> Rule {
         let from: Vec<String> = from.iter().map(|v| v.to_string()).collect();

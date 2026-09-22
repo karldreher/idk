@@ -1,35 +1,26 @@
 //! End-to-end tests for `idk copy tags`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use assert_cmd::Command;
 use id3::{Tag, TagLike, Version};
 use predicates::prelude::*;
 use predicates::str::contains;
 use tempfile::TempDir;
 
-/// Writes an MP3 stand-in with the given artist / album artist.
+mod common;
+use common::{idk, tag, write_config};
+
+/// An MP3 stand-in titled `name`, with the given artist / album artist.
 fn mp3(dir: &TempDir, name: &str, artist: Option<&str>, album_artist: Option<&str>) -> PathBuf {
-    let path = dir.path().join(name);
-    std::fs::write(&path, [0xFF, 0xFB, 0x90, 0x64, 0x00]).unwrap();
-    let mut tag = Tag::new();
-    tag.set_title(name);
-    if let Some(artist) = artist {
-        tag.set_artist(artist);
-    }
-    if let Some(album_artist) = album_artist {
-        tag.set_album_artist(album_artist);
-    }
-    tag.write_to_path(&path, Version::Id3v24).unwrap();
-    path
-}
-
-fn tag(path: &Path) -> Tag {
-    Tag::read_from_path(path).unwrap()
-}
-
-fn idk() -> Command {
-    Command::cargo_bin("idk").unwrap()
+    common::mp3(dir.path(), name, |tag| {
+        tag.set_title(name);
+        if let Some(artist) = artist {
+            tag.set_artist(artist);
+        }
+        if let Some(album_artist) = album_artist {
+            tag.set_album_artist(album_artist);
+        }
+    })
 }
 
 #[test]
@@ -344,18 +335,12 @@ fn dry_run_exit_code_matches_real_run() {
         .stderr(contains("empty.mp3: no artist value"));
 }
 
-fn write_config(dir: &TempDir, name: &str, yaml: &str) -> PathBuf {
-    let path = dir.path().join(name);
-    std::fs::write(&path, yaml).unwrap();
-    path
-}
-
 #[test]
 fn reads_fields_from_config_file() {
     let dir = TempDir::new().unwrap();
     let file = mp3(&dir, "a.mp3", Some("Artist"), Some("Old"));
     let config = write_config(
-        &dir,
+        dir.path(),
         "custom.yaml",
         "tags:\n  copy:\n    from: artist\n    to: albumartist\n",
     );
@@ -376,7 +361,7 @@ fn bare_config_flag_reads_idk_yaml_from_working_directory() {
     let dir = TempDir::new().unwrap();
     let file = mp3(&dir, "a.mp3", Some("Artist"), None);
     write_config(
-        &dir,
+        dir.path(),
         "idk.yaml",
         "tags:\n  copy:\n    from: artist\n    to: albumartist\n",
     );
@@ -394,7 +379,7 @@ fn bare_config_flag_reads_idk_yaml_from_working_directory() {
 fn config_conflicts_with_from_and_to() {
     let dir = TempDir::new().unwrap();
     let config = write_config(
-        &dir,
+        dir.path(),
         "c.yaml",
         "tags:\n  copy:\n    from: artist\n    to: title\n",
     );
@@ -434,7 +419,7 @@ fn invalid_config_exits_1_before_touching_files() {
     ];
 
     for (yaml, message) in cases {
-        let config = write_config(&dir, "c.yaml", yaml);
+        let config = write_config(dir.path(), "c.yaml", yaml);
         idk()
             .args(["copy", "tags", "--config"])
             .arg(&config)

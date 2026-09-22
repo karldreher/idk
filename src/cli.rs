@@ -5,8 +5,7 @@ use std::path::PathBuf;
 
 use clap::{ArgAction, Args, Parser, Subcommand};
 
-use crate::find::{Condition, ConditionParser};
-use crate::tag_field::{AssignmentParser, TagField, TagFieldParser};
+use crate::tag_field::{TagField, TagFieldParser, parse_assignment};
 
 /// Config file used when `--config` is given without a path.
 pub const DEFAULT_CONFIG: &str = "idk.yaml";
@@ -104,8 +103,8 @@ pub struct FindArgs {
     ///
     /// A missing field compares as "". A VALUE of @FIELD compares against another
     /// field, e.g. albumartist!=@artist. All conditions must match.
-    #[arg(long = "where", value_name = "COND", value_parser = ConditionParser)]
-    pub conditions: Vec<Condition>,
+    #[arg(long = "where", value_name = "COND")]
+    pub conditions: Vec<String>,
 
     /// Match files where this field is absent or empty (repeatable).
     #[arg(long, value_name = "FIELD", value_parser = TagFieldParser)]
@@ -175,7 +174,7 @@ pub struct SetTagsArgs {
     #[arg(
         long = "field",
         value_name = "FIELD=VALUE",
-        value_parser = AssignmentParser,
+        value_parser = parse_assignment,
         required = true
     )]
     pub fields: Vec<(TagField, String)>,
@@ -202,6 +201,16 @@ pub enum MergeTarget {
     Artists(MergeArgs),
 }
 
+impl MergeTarget {
+    /// The field merged, its `tags.merge` config key, and the arguments.
+    pub fn into_parts(self) -> (TagField, &'static str, MergeArgs) {
+        match self {
+            MergeTarget::Genres(args) => (TagField::Genre, "genres", args),
+            MergeTarget::Artists(args) => (TagField::Artist, "artists", args),
+        }
+    }
+}
+
 /// Arguments for `idk merge genres` and `idk merge artists`.
 #[derive(Args)]
 pub struct MergeArgs {
@@ -220,6 +229,7 @@ pub struct MergeArgs {
     #[arg(
         long,
         value_name = "VALUE",
+        value_parser = non_blank,
         required_unless_present = "config",
         conflicts_with = "config"
     )]
@@ -349,6 +359,21 @@ pub struct InputArgs {
     pub files_from: Option<PathBuf>,
 }
 
+/// Rejects empty or whitespace-only values.
+fn non_blank(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        Err("must not be empty".to_owned())
+    } else {
+        Ok(value.to_owned())
+    }
+}
+
+/// Exits with clap's usage-error formatting and exit code 2.
+pub fn usage_error(kind: clap::error::ErrorKind, message: impl std::fmt::Display) -> ! {
+    use clap::CommandFactory;
+    Cli::command().error(kind, message).exit()
+}
+
 /// Execution options shared by file-processing operations.
 #[derive(Args)]
 pub struct RunOptions {
@@ -362,6 +387,13 @@ pub struct RunOptions {
 }
 
 impl RunOptions {
+    /// Whether to draw the progress bar for a command whose results go to stdout:
+    /// not with `--quiet`, and not when stdout is piped.
+    pub fn progress_for_stdout(&self) -> bool {
+        use std::io::IsTerminal;
+        !self.quiet && std::io::stdout().is_terminal()
+    }
+
     /// The effective concurrency limit.
     pub fn jobs(&self) -> usize {
         self.jobs

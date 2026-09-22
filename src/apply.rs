@@ -8,14 +8,13 @@ use std::collections::{BTreeSet, HashMap};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
 
 use id3::{Tag, Version};
 use serde_json::Value;
 
 use crate::cli::ApplyArgs;
-use crate::outcome::{Change, Plan, Report};
-use crate::runner::{self, Order};
+use crate::input::Inputs;
+use crate::outcome::{Plan, run_writes};
 use crate::show::display_value;
 use crate::tag_field::TagField;
 
@@ -156,15 +155,11 @@ pub fn plan_apply(path: &Path, edits: &[Edit]) -> id3::Result<Plan> {
             None => field.remove(&mut tag),
         }
     }
-    let changes: Vec<Change> = edits
-        .iter()
-        .filter_map(|(field, _)| Change::between(field, &before, &tag))
-        .collect();
-    Ok(if changes.is_empty() {
-        Plan::Unchanged
-    } else {
-        Plan::Write { tag, changes }
-    })
+    Ok(Plan::from_diff(
+        edits.iter().map(|(field, _)| field),
+        &before,
+        tag,
+    ))
 }
 
 /// Reads and validates the edit source (`-` for stdin).
@@ -201,34 +196,20 @@ pub async fn run(args: ApplyArgs) -> ExitCode {
     }
 
     let files: Vec<PathBuf> = edits.entries.iter().map(|(path, _)| path.clone()).collect();
-    let by_path: Arc<HashMap<PathBuf, Vec<Edit>>> = Arc::new(edits.entries.into_iter().collect());
-    let dry_run = args.write.dry_run;
-    let mut report = Report::new(dry_run);
-    runner::process(
-        files,
-        args.run.jobs(),
-        Order::Completion,
-        !args.run.quiet,
-        move |path| {
-            let edits = by_path.get(path).map_or(&[][..], Vec::as_slice);
-            plan_apply(path, edits)
-                .and_then(|plan| plan.apply(path, dry_run))
-                .map_err(|err| err.to_string())
-        },
-        |progress, path, result| report.record(&path, result, progress),
-    )
-    .await;
-
-    if !args.run.quiet {
-        println!("{}", report.summary(None));
-    }
-    report.exit_code()
+    let by_path: HashMap<PathBuf, Vec<Edit>> = edits.entries.into_iter().collect();
+    let inputs = Inputs { files, failures: 0 };
+    run_writes(inputs, &args.run, &args.write, None, move |path| {
+        let edits = by_path.get(path).map_or(&[][..], Vec::as_slice);
+        plan_apply(path, edits).map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::outcome::Outcome;
+    use crate::test_support::{AUDIO, mp3};
     use id3::TagLike;
     use std::collections::HashSet;
     use tempfile::TempDir;
@@ -236,8 +217,6 @@ mod tests {
     fn keys(edits: &Edits) -> HashSet<&str> {
         edits.skipped_keys.iter().map(String::as_str).collect()
     }
-
-    const AUDIO: &[u8] = &[0xFF, 0xFB, 0x90, 0x64, 0x00];
 
     #[test]
     fn parses_edits_and_skips_non_field_keys() {
@@ -307,15 +286,6 @@ mod tests {
                 alias.display()
             )]
         );
-    }
-
-    fn mp3(dir: &TempDir, build: impl FnOnce(&mut Tag)) -> PathBuf {
-        let path = dir.path().join("a.mp3");
-        std::fs::write(&path, AUDIO).unwrap();
-        let mut tag = Tag::new();
-        build(&mut tag);
-        tag.write_to_path(&path, Version::Id3v24).unwrap();
-        path
     }
 
     fn apply(path: &Path, edits: &[Edit]) -> Outcome {

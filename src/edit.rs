@@ -2,14 +2,14 @@
 
 use std::path::Path;
 use std::process::ExitCode;
-use std::sync::Arc;
 
 use id3::{Tag, Version};
 
-use crate::cli::{ClearTagsArgs, InputArgs, RunOptions, SetTagsArgs, WriteOptions};
+use clap::error::ErrorKind;
+
+use crate::cli::{ClearTagsArgs, SetTagsArgs, usage_error};
 use crate::input;
-use crate::outcome::{Change, Plan, Report};
-use crate::runner::{self, Order};
+use crate::outcome::{Plan, run_writes};
 use crate::tag_field::TagField;
 
 /// Reads the file at `path` and works out the effect of setting every field in `assignments`.
@@ -23,7 +23,7 @@ pub fn plan_set(path: &Path, assignments: &[(TagField, String)]) -> id3::Result<
         field.write(&mut tag, value);
     }
     let fields = assignments.iter().map(|(field, _)| field);
-    Ok(plan_changes(fields, before, tag))
+    Ok(Plan::from_diff(fields, &before, tag))
 }
 
 /// Reads the file at `path` and works out the effect of removing every field in `fields`.
@@ -37,91 +37,54 @@ pub fn plan_clear(path: &Path, fields: &[TagField]) -> id3::Result<Plan> {
     for field in fields {
         field.remove(&mut tag);
     }
-    Ok(plan_changes(fields.iter(), before, tag))
-}
-
-/// A plan writing `after` for every field whose value differs from `before`.
-fn plan_changes<'a>(fields: impl Iterator<Item = &'a TagField>, before: Tag, after: Tag) -> Plan {
-    let changes: Vec<Change> = fields
-        .filter_map(|field| Change::between(field, &before, &after))
-        .collect();
-    if changes.is_empty() {
-        Plan::Unchanged
-    } else {
-        Plan::Write {
-            tag: after,
-            changes,
-        }
-    }
+    Ok(Plan::from_diff(fields, &before, tag))
 }
 
 /// Runs `idk set tags` over every input file and returns the process exit code.
 pub async fn run_set(args: SetTagsArgs) -> ExitCode {
-    let assignments = Arc::new(args.fields);
-    run_plans(args.input, &args.run, &args.write, move |path| {
-        plan_set(path, &assignments)
+    reject_duplicates(args.fields.iter().map(|(field, _)| field));
+    let assignments = args.fields;
+    let inputs = input::resolve(args.input).await;
+    run_writes(inputs, &args.run, &args.write, None, move |path| {
+        plan_set(path, &assignments).map_err(|err| err.to_string())
     })
     .await
 }
 
 /// Runs `idk clear tags` over every input file and returns the process exit code.
 pub async fn run_clear(args: ClearTagsArgs) -> ExitCode {
-    let fields = Arc::new(args.fields);
-    run_plans(args.input, &args.run, &args.write, move |path| {
-        plan_clear(path, &fields)
+    reject_duplicates(args.fields.iter());
+    let fields = args.fields;
+    let inputs = input::resolve(args.input).await;
+    run_writes(inputs, &args.run, &args.write, None, move |path| {
+        plan_clear(path, &fields).map_err(|err| err.to_string())
     })
     .await
 }
 
-/// Plans and applies an edit on every file concurrently, then prints the summary.
-async fn run_plans(
-    input: InputArgs,
-    run: &RunOptions,
-    write: &WriteOptions,
-    plan: impl Fn(&Path) -> id3::Result<Plan> + Send + Sync + 'static,
-) -> ExitCode {
-    let dry_run = write.dry_run;
-    let mut report = Report::new(dry_run);
-    let inputs = input::resolve(input).await;
-    report.add_failures(inputs.failures);
-    runner::process(
-        inputs.files,
-        run.jobs(),
-        Order::Completion,
-        !run.quiet,
-        move |path| {
-            plan(path)
-                .and_then(|plan| plan.apply(path, dry_run))
-                .map_err(|err| err.to_string())
-        },
-        |progress, path, result| report.record(&path, result, progress),
-    )
-    .await;
-
-    if !run.quiet {
-        println!("{}", report.summary(None));
+/// Exits with a usage error when any `--field` is named twice (aliases included).
+fn reject_duplicates<'a>(fields: impl Iterator<Item = &'a TagField>) {
+    let mut seen = Vec::new();
+    for field in fields {
+        if seen.contains(&field) {
+            usage_error(
+                ErrorKind::ArgumentConflict,
+                format!("--field {field} given more than once"),
+            );
+        }
+        seen.push(field);
     }
-    report.exit_code()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outcome::Change;
     use crate::outcome::Outcome;
+    use crate::test_support::{AUDIO, mp3, write_mp3};
     use id3::TagLike;
-    use std::path::PathBuf;
+
     use tempfile::TempDir;
-
-    const AUDIO: &[u8] = &[0xFF, 0xFB, 0x90, 0x64, 0x00, 0x11];
-
-    fn mp3(dir: &TempDir, build: impl FnOnce(&mut Tag), version: Version) -> PathBuf {
-        let path = dir.path().join("song.mp3");
-        std::fs::write(&path, AUDIO).unwrap();
-        let mut tag = Tag::new();
-        build(&mut tag);
-        tag.write_to_path(&path, version).unwrap();
-        path
-    }
 
     fn set(path: &Path, assignments: &[(TagField, &str)]) -> Outcome {
         let assignments: Vec<_> = assignments
@@ -137,7 +100,9 @@ mod tests {
     #[test]
     fn sets_several_fields_and_reports_each_change() {
         let dir = TempDir::new().unwrap();
-        let path = mp3(&dir, |tag| tag.set_genre("Pop"), Version::Id3v23);
+        let mut tag = Tag::new();
+        tag.set_genre("Pop");
+        let path = write_mp3(&dir, Some(&tag), Version::Id3v23);
 
         let outcome = set(
             &path,
@@ -181,7 +146,7 @@ mod tests {
     #[test]
     fn matching_values_leave_the_file_untouched() {
         let dir = TempDir::new().unwrap();
-        let path = mp3(&dir, |tag| tag.set_genre("Rock"), Version::Id3v24);
+        let path = mp3(&dir, |tag| tag.set_genre("Rock"));
         let bytes = std::fs::read(&path).unwrap();
 
         assert_eq!(set(&path, &[(TagField::Genre, "Rock")]), Outcome::Unchanged);
@@ -198,15 +163,11 @@ mod tests {
     #[test]
     fn clears_fields_and_reports_each_removal() {
         let dir = TempDir::new().unwrap();
-        let path = mp3(
-            &dir,
-            |tag| {
-                tag.set_genre("Rock");
-                tag.set_artist("Artist");
-                tag.set_text("TENC", "Encoder");
-            },
-            Version::Id3v24,
-        );
+        let path = mp3(&dir, |tag| {
+            tag.set_genre("Rock");
+            tag.set_artist("Artist");
+            tag.set_text("TENC", "Encoder");
+        });
 
         let outcome = clear(&path, &[TagField::Genre, TagField::Comment]);
 
@@ -228,7 +189,7 @@ mod tests {
     #[test]
     fn clearing_absent_fields_or_untagged_files_is_unchanged() {
         let dir = TempDir::new().unwrap();
-        let path = mp3(&dir, |tag| tag.set_artist("Artist"), Version::Id3v24);
+        let path = mp3(&dir, |tag| tag.set_artist("Artist"));
         let bytes = std::fs::read(&path).unwrap();
         assert_eq!(clear(&path, &[TagField::Genre]), Outcome::Unchanged);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);

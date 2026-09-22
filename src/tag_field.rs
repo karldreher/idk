@@ -46,72 +46,52 @@ struct Named {
     field: TagField,
     name: &'static str,
     aliases: &'static [&'static str],
-    help: &'static str,
+    /// The single text frame storing the field; `None` for `date` and `comment`.
+    frame: Option<&'static str>,
+    /// Help text; the frame, when there is one, is appended in parentheses.
+    description: &'static str,
+}
+
+const fn named(
+    field: TagField,
+    name: &'static str,
+    aliases: &'static [&'static str],
+    frame: Option<&'static str>,
+    description: &'static str,
+) -> Named {
+    Named {
+        field,
+        name,
+        aliases,
+        frame,
+        description,
+    }
 }
 
 /// Every fixed-name field, in help order.
+#[rustfmt::skip]
 const NAMED: &[Named] = &[
-    Named {
-        field: TagField::Artist,
-        name: "artist",
-        aliases: &["tpe1"],
-        help: "Lead artist (TPE1)",
-    },
-    Named {
-        field: TagField::AlbumArtist,
-        name: "albumartist",
-        aliases: &["album-artist", "tpe2"],
-        help: "Album artist (TPE2)",
-    },
-    Named {
-        field: TagField::Title,
-        name: "title",
-        aliases: &["tit2"],
-        help: "Track title (TIT2)",
-    },
-    Named {
-        field: TagField::Album,
-        name: "album",
-        aliases: &["talb"],
-        help: "Album title (TALB)",
-    },
-    Named {
-        field: TagField::TrackNumber,
-        name: "tracknumber",
-        aliases: &["track", "trck"],
-        help: "Track number (TRCK)",
-    },
-    Named {
-        field: TagField::DiscNumber,
-        name: "discnumber",
-        aliases: &["disc", "tpos"],
-        help: "Disc number (TPOS)",
-    },
-    Named {
-        field: TagField::Date,
-        name: "date",
-        aliases: &["year", "tdrc", "tyer"],
-        help: "Recording date (TDRC on v2.4, TYER on v2.3)",
-    },
-    Named {
-        field: TagField::Genre,
-        name: "genre",
-        aliases: &["tcon"],
-        help: "Genre (TCON)",
-    },
-    Named {
-        field: TagField::Composer,
-        name: "composer",
-        aliases: &["tcom"],
-        help: "Composer (TCOM)",
-    },
-    Named {
-        field: TagField::Comment,
-        name: "comment",
-        aliases: &["comm"],
-        help: "Comment (COMM)",
-    },
+    named(TagField::Artist, "artist", &["tpe1"], Some("TPE1"), "Lead artist"),
+    named(TagField::AlbumArtist, "albumartist", &["album-artist", "tpe2"], Some("TPE2"), "Album artist"),
+    named(TagField::Title, "title", &["tit2"], Some("TIT2"), "Track title"),
+    named(TagField::Album, "album", &["talb"], Some("TALB"), "Album title"),
+    named(TagField::TrackNumber, "tracknumber", &["track", "trck"], Some("TRCK"), "Track number"),
+    named(TagField::DiscNumber, "discnumber", &["disc", "tpos"], Some("TPOS"), "Disc number"),
+    named(TagField::Date, "date", &["year", "tdrc", "tyer"], None, "Recording date (TDRC on v2.4, TYER on v2.3)"),
+    named(TagField::Genre, "genre", &["tcon"], Some("TCON"), "Genre"),
+    named(TagField::Composer, "composer", &["tcom"], Some("TCOM"), "Composer"),
+    named(TagField::Comment, "comment", &["comm"], None, "Comment (COMM)"),
 ];
+
+impl Named {
+    /// Help text for `--help`, e.g. `Lead artist (TPE1)`.
+    fn help(&self) -> String {
+        match self.frame {
+            Some(frame) => format!("{} ({frame})", self.description),
+            None => self.description.to_owned(),
+        }
+    }
+}
 
 /// Prefix for user-defined text fields, e.g. `txxx:MusicBrainz Album Id`.
 const TXXX_PREFIX: &str = "txxx:";
@@ -119,17 +99,7 @@ const TXXX_PREFIX: &str = "txxx:";
 impl TagField {
     /// The plain text frame backing this field, for fields stored in exactly one text frame.
     fn text_frame(&self) -> Option<&'static str> {
-        match self {
-            TagField::Artist => Some("TPE1"),
-            TagField::AlbumArtist => Some("TPE2"),
-            TagField::Title => Some("TIT2"),
-            TagField::Album => Some("TALB"),
-            TagField::TrackNumber => Some("TRCK"),
-            TagField::DiscNumber => Some("TPOS"),
-            TagField::Genre => Some("TCON"),
-            TagField::Composer => Some("TCOM"),
-            TagField::Date | TagField::Comment | TagField::Txxx(_) => None,
-        }
+        NAMED.iter().find(|named| named.field == *self)?.frame
     }
 
     /// The field a frame belongs to, if idk has a name for it.
@@ -147,7 +117,7 @@ impl TagField {
                 .map(|extended| TagField::Txxx(extended.description.clone())),
             id => NAMED
                 .iter()
-                .find(|named| named.field.text_frame() == Some(id))
+                .find(|named| named.frame == Some(id))
                 .map(|named| named.field.clone()),
         }
     }
@@ -231,18 +201,14 @@ fn year_of(value: &str) -> &str {
 }
 
 impl FromStr for TagField {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(prefix) = s.get(..TXXX_PREFIX.len())
             && prefix.eq_ignore_ascii_case(TXXX_PREFIX)
+            && s.len() > TXXX_PREFIX.len()
         {
-            let description = &s[TXXX_PREFIX.len()..];
-            return if description.is_empty() {
-                Err(())
-            } else {
-                Ok(TagField::Txxx(description.to_owned()))
-            };
+            return Ok(TagField::Txxx(s[TXXX_PREFIX.len()..].to_owned()));
         }
         NAMED
             .iter()
@@ -254,7 +220,10 @@ impl FromStr for TagField {
                         .any(|alias| alias.eq_ignore_ascii_case(s))
             })
             .map(|named| named.field.clone())
-            .ok_or(())
+            .ok_or_else(|| {
+                let names: Vec<_> = possible_values().map(|v| v.get_name().to_owned()).collect();
+                format!("unknown tag '{s}'; expected one of: {}", names.join(", "))
+            })
     }
 }
 
@@ -274,8 +243,7 @@ impl fmt::Display for TagField {
 impl<'de> Deserialize<'de> for TagField {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let name = String::deserialize(deserializer)?;
-        name.parse()
-            .map_err(|()| serde::de::Error::custom(format!("unknown tag {name:?}")))
+        name.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -308,6 +276,8 @@ impl JsonSchema for TagField {
 }
 
 /// A regex matching `literal` in any letter case, e.g. `ab-` → `[aA][bB]-`.
+///
+/// Field names contain only letters, digits, `-` and `:`, none of which need escaping.
 fn case_insensitive(literal: &str) -> String {
     literal
         .chars()
@@ -315,19 +285,10 @@ fn case_insensitive(literal: &str) -> String {
             if c.is_ascii_alphabetic() {
                 format!("[{}{}]", c.to_ascii_lowercase(), c.to_ascii_uppercase())
             } else {
-                regex_escape(c)
+                c.to_string()
             }
         })
         .collect()
-}
-
-/// Escapes a regex metacharacter; field names only contain `-`, `:` and digits besides letters.
-fn regex_escape(c: char) -> String {
-    if r"\.+*?()|[]{}^$".contains(c) {
-        format!("\\{c}")
-    } else {
-        c.to_string()
-    }
 }
 
 /// clap value parser for [`TagField`], listing every field in `--help`.
@@ -344,7 +305,7 @@ impl TypedValueParser for TagFieldParser {
         value: &OsStr,
     ) -> Result<TagField, clap::Error> {
         let raw = value.to_string_lossy();
-        raw.parse().map_err(|()| {
+        raw.parse().map_err(|_| {
             let mut err = clap::Error::new(ErrorKind::InvalidValue).with_cmd(cmd);
             if let Some(arg) = arg {
                 err.insert(
@@ -369,38 +330,18 @@ impl TypedValueParser for TagFieldParser {
     }
 }
 
-/// clap value parser for `FIELD=VALUE`, splitting on the first `=`.
+/// Parses `FIELD=VALUE` for `idk set tags`, splitting on the first `=`.
 ///
 /// The value must not be empty; removing a field is `idk clear tags`.
-#[derive(Clone)]
-pub struct AssignmentParser;
-
-impl TypedValueParser for AssignmentParser {
-    type Value = (TagField, String);
-
-    fn parse_ref(
-        &self,
-        cmd: &clap::Command,
-        arg: Option<&clap::Arg>,
-        value: &OsStr,
-    ) -> Result<(TagField, String), clap::Error> {
-        let raw = value.to_string_lossy();
-        let invalid = |message: String| {
-            clap::Error::raw(ErrorKind::ValueValidation, format!("{message}\n")).with_cmd(cmd)
-        };
-        let Some((name, value)) = raw.split_once('=') else {
-            return Err(invalid(format!(
-                "invalid value '{raw}' for '--field': expected FIELD=VALUE"
-            )));
-        };
-        let field = TagFieldParser.parse_ref(cmd, arg, OsStr::new(name))?;
-        if value.is_empty() {
-            return Err(invalid(format!(
-                "empty value for '{field}'; use `idk clear tags --field {field}` to remove it"
-            )));
-        }
-        Ok((field, value.to_owned()))
+pub fn parse_assignment(raw: &str) -> Result<(TagField, String), String> {
+    let (name, value) = raw.split_once('=').ok_or("expected FIELD=VALUE")?;
+    let field: TagField = name.parse()?;
+    if value.is_empty() {
+        return Err(format!(
+            "empty value for '{field}'; use `idk clear tags --field {field}` to remove it"
+        ));
     }
+    Ok((field, value.to_owned()))
 }
 
 /// Every accepted field for help and error output.
@@ -410,7 +351,7 @@ fn possible_values() -> impl Iterator<Item = PossibleValue> {
         .map(|named| {
             PossibleValue::new(named.name)
                 .aliases(named.aliases.iter().copied())
-                .help(named.help)
+                .help(named.help())
         })
         .chain([PossibleValue::new("txxx:<description>")
             .help("User-defined text frame with the given description (TXXX)")])
@@ -420,7 +361,7 @@ fn possible_values() -> impl Iterator<Item = PossibleValue> {
 mod tests {
     use super::*;
 
-    fn parse(s: &str) -> Result<TagField, ()> {
+    fn parse(s: &str) -> Result<TagField, String> {
         s.parse()
     }
 
@@ -440,13 +381,17 @@ mod tests {
             parse("TXXX:MusicBrainz Album Id"),
             Ok(TagField::Txxx("MusicBrainz Album Id".into()))
         );
-        assert_eq!(parse("txxx:"), Err(()));
+        assert!(parse("txxx:").is_err());
     }
 
     #[test]
     fn rejects_unknown_names() {
-        assert_eq!(parse("artists"), Err(()));
-        assert_eq!(parse(""), Err(()));
+        assert!(
+            parse("artists")
+                .unwrap_err()
+                .starts_with("unknown tag 'artists'; expected one of: artist,")
+        );
+        assert!(parse("").is_err());
     }
 
     #[test]

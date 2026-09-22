@@ -1,4 +1,4 @@
-//! Per-file plans, outcomes and run reporting shared by write operations.
+//! Per-file plans, outcomes and the shared runner for every write command.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -6,7 +6,44 @@ use std::process::ExitCode;
 use id3::Tag;
 use indicatif::ProgressBar;
 
+use crate::cli::{RunOptions, WriteOptions};
+use crate::input::Inputs;
+use crate::runner::{self, Order};
 use crate::tag_field::TagField;
+
+/// Plans and applies an edit to every file concurrently, then prints the summary.
+///
+/// In a dry run each pending change is printed instead of written. `skipped`
+/// labels the skipped count in the summary, or omits it when `None`.
+pub async fn run_writes(
+    inputs: Inputs,
+    run: &RunOptions,
+    write: &WriteOptions,
+    skipped: Option<&str>,
+    plan: impl Fn(&Path) -> Result<Plan, String> + Send + Sync + 'static,
+) -> ExitCode {
+    let dry_run = write.dry_run;
+    let mut report = Report::new(dry_run);
+    report.failed = inputs.failures;
+    runner::process(
+        inputs.files,
+        run.jobs(),
+        Order::Completion,
+        !run.quiet,
+        move |path| {
+            plan(path)?
+                .apply(path, dry_run)
+                .map_err(|err| err.to_string())
+        },
+        |progress, path, result| report.record(&path, result, progress),
+    )
+    .await;
+
+    if !run.quiet {
+        println!("{}", report.summary(skipped));
+    }
+    runner::exit_code(report.failed > 0)
+}
 
 /// A field's value before and after a write.
 #[derive(Debug, PartialEq, Eq)]
@@ -17,18 +54,6 @@ pub struct Change {
     pub old: Option<String>,
     /// The field's new value, or `None` when it was removed.
     pub new: Option<String>,
-}
-
-impl Change {
-    /// Compares `field` in `before` and `after`, returning the change if its value differs.
-    pub fn between(field: &TagField, before: &Tag, after: &Tag) -> Option<Change> {
-        let (old, new) = (field.read(before), field.read(after));
-        (old != new).then(|| Change {
-            field: field.clone(),
-            old,
-            new,
-        })
-    }
 }
 
 /// What happened to a single file.
@@ -58,6 +83,34 @@ pub enum Plan {
 }
 
 impl Plan {
+    /// The plan for an edit that turned `before` into `after`, listing each of `fields`
+    /// whose value changed. `Unchanged` when none did, so the file is not rewritten.
+    pub fn from_diff<'a>(
+        fields: impl IntoIterator<Item = &'a TagField>,
+        before: &Tag,
+        after: Tag,
+    ) -> Plan {
+        let changes: Vec<Change> = fields
+            .into_iter()
+            .filter_map(|field| {
+                let (old, new) = (field.read(before), field.read(&after));
+                (old != new).then(|| Change {
+                    field: field.clone(),
+                    old,
+                    new,
+                })
+            })
+            .collect();
+        if changes.is_empty() {
+            Plan::Unchanged
+        } else {
+            Plan::Write {
+                tag: after,
+                changes,
+            }
+        }
+    }
+
     /// Writes the planned tag to `path` if it changed, and reports the outcome.
     ///
     /// With `dry_run`, nothing is written but the outcome is the same.
@@ -76,7 +129,7 @@ impl Plan {
 }
 
 /// Per-run tallies used for dry-run output, the final summary and the exit code.
-pub struct Report {
+struct Report {
     dry_run: bool,
     updated: usize,
     unchanged: usize,
@@ -86,7 +139,7 @@ pub struct Report {
 
 impl Report {
     /// A report for a run; `dry_run` prints changes instead of writing them.
-    pub fn new(dry_run: bool) -> Self {
+    fn new(dry_run: bool) -> Self {
         Report {
             dry_run,
             updated: 0,
@@ -99,7 +152,7 @@ impl Report {
     /// Records one file's result, printing failures to stderr above the progress bar.
     ///
     /// In a dry run, each pending change is printed to stdout.
-    pub fn record(&mut self, path: &Path, result: Result<Outcome, String>, progress: &ProgressBar) {
+    fn record(&mut self, path: &Path, result: Result<Outcome, String>, progress: &ProgressBar) {
         match result {
             Ok(Outcome::Updated(changes)) => {
                 self.updated += 1;
@@ -131,13 +184,8 @@ impl Report {
         }
     }
 
-    /// Counts `count` failures that happened outside [`Report::record`], such as bad inputs.
-    pub fn add_failures(&mut self, count: usize) {
-        self.failed += count;
-    }
-
     /// One-line summary; `skipped` labels the skipped count, or omits it when `None`.
-    pub fn summary(&self, skipped: Option<&str>) -> String {
+    fn summary(&self, skipped: Option<&str>) -> String {
         let updated = if self.dry_run {
             "would be updated"
         } else {
@@ -150,15 +198,6 @@ impl Report {
             "{} {updated}, {} unchanged{skipped}, {} failed",
             self.updated, self.unchanged, self.failed
         )
-    }
-
-    /// Non-zero when any file failed.
-    pub fn exit_code(&self) -> ExitCode {
-        if self.failed > 0 {
-            ExitCode::FAILURE
-        } else {
-            ExitCode::SUCCESS
-        }
     }
 }
 
@@ -179,7 +218,7 @@ mod tests {
             "0 updated, 1 unchanged, 1 skipped (no artist), 1 failed"
         );
         assert_eq!(report.summary(None), "0 updated, 1 unchanged, 1 failed");
-        assert_eq!(report.exit_code(), ExitCode::FAILURE);
+        assert_eq!(report.failed, 1);
     }
 
     #[test]

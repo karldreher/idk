@@ -5,11 +5,48 @@ use std::process::ExitCode;
 
 use id3::Tag;
 
-use crate::cli::CopyTagsArgs;
+use clap::error::ErrorKind;
+
+use crate::cli::{CopyTagsArgs, usage_error};
+use crate::config::{Config, ConfigError};
 use crate::input;
-use crate::outcome::{Change, Outcome, Plan, Report};
-use crate::runner::{self, Order};
+use crate::outcome::{Plan, run_writes};
 use crate::tag_field::TagField;
+
+/// The fields to copy between: `--from`/`--to`, or `tags.copy` in `--config`.
+///
+/// Naming the same field twice is a usage error on the command line (exit 2)
+/// and a config error in a config file (exit 1).
+async fn fields(args: &CopyTagsArgs) -> Result<(TagField, TagField), ConfigError> {
+    let Some(path) = &args.config else {
+        let from = args
+            .from
+            .clone()
+            .expect("clap requires --from without --config");
+        let to = args
+            .to
+            .clone()
+            .expect("clap requires --to without --config");
+        if from == to {
+            usage_error(
+                ErrorKind::ArgumentConflict,
+                "--from and --to must name different tags",
+            );
+        }
+        return Ok((from, to));
+    };
+    let config = Config::load(path).await?;
+    let copy = config
+        .copy()
+        .map_err(|message| ConfigError::new(path, message))?;
+    if copy.from == copy.to {
+        return Err(ConfigError::new(
+            path,
+            "tags.copy: from and to must name different tags",
+        ));
+    }
+    Ok((copy.from.clone(), copy.to.clone()))
+}
 
 /// Reads the file at `path` and works out the effect of copying `from` into `to`.
 ///
@@ -23,78 +60,54 @@ pub fn plan_copy(path: &Path, from: &TagField, to: &TagField) -> id3::Result<Pla
     };
     let before = tag.clone();
     to.write(&mut tag, &value);
-    match Change::between(to, &before, &tag) {
-        Some(change) => Ok(Plan::Write {
-            tag,
-            changes: vec![change],
-        }),
-        None => Ok(Plan::Unchanged),
-    }
-}
-
-/// Copies the value of `from` into `to` in the file at `path`.
-///
-/// The destination is overwritten. Every other frame, the tag version and the
-/// audio data are preserved. The file is only written when its tag changes.
-pub fn copy_tag(
-    path: &Path,
-    from: &TagField,
-    to: &TagField,
-    dry_run: bool,
-) -> id3::Result<Outcome> {
-    plan_copy(path, from, to)?.apply(path, dry_run)
+    Ok(Plan::from_diff([to], &before, tag))
 }
 
 /// Runs `idk copy tags` over every input file and returns the process exit code.
 ///
 /// Files are processed concurrently, up to `--jobs` at a time. A file with an
 /// empty source is skipped, or fails with `--fail-on-empty`.
-pub async fn run(args: CopyTagsArgs, from: TagField, to: TagField) -> ExitCode {
-    let summary_label = format!("no {from}");
-    let dry_run = args.write.dry_run;
+pub async fn run(args: CopyTagsArgs) -> ExitCode {
+    let (from, to) = match fields(&args).await {
+        Ok(fields) => fields,
+        Err(err) => return err.report(),
+    };
+    let skipped = format!("no {from}");
     let fail_on_empty = args.fail_on_empty;
-    let mut report = Report::new(dry_run);
-    let inputs = input::resolve(args.input.clone()).await;
-    report.add_failures(inputs.failures);
-    runner::process(
-        inputs.files,
-        args.run.jobs(),
-        Order::Completion,
-        !args.run.quiet,
-        move |path| match copy_tag(path, &from, &to, dry_run) {
-            Ok(Outcome::Skipped) if fail_on_empty => Err(format!("no {from} value")),
-            result => result.map_err(|err| err.to_string()),
+    let inputs = input::resolve(args.input).await;
+    run_writes(
+        inputs,
+        &args.run,
+        &args.write,
+        Some(&skipped),
+        move |path| match plan_copy(path, &from, &to) {
+            Ok(Plan::Skipped) if fail_on_empty => Err(format!("no {from} value")),
+            plan => plan.map_err(|err| err.to_string()),
         },
-        |progress, path, result| report.record(&path, result, progress),
     )
-    .await;
-
-    if !args.run.quiet {
-        println!("{}", report.summary(Some(&summary_label)));
-    }
-    report.exit_code()
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::outcome::{Change, Outcome};
+    use crate::test_support::{AUDIO, write_mp3};
+
+    fn copy_tag(
+        path: &Path,
+        from: &TagField,
+        to: &TagField,
+        dry_run: bool,
+    ) -> id3::Result<Outcome> {
+        plan_copy(path, from, to)?.apply(path, dry_run)
+    }
     use id3::frame::{Comment, ExtendedText};
     use id3::{Frame, TagLike, Version};
-    use std::path::PathBuf;
+
     use tempfile::TempDir;
 
     /// Bytes standing in for MPEG audio; only their preservation matters.
-    const AUDIO: &[u8] = &[0xFF, 0xFB, 0x90, 0x64, 0x00, 0x11, 0x22, 0x33];
-
-    fn write_mp3(dir: &TempDir, tag: Option<&Tag>, version: Version) -> PathBuf {
-        let path = dir.path().join("song.mp3");
-        std::fs::write(&path, AUDIO).unwrap();
-        if let Some(tag) = tag {
-            tag.write_to_path(&path, version).unwrap();
-        }
-        path
-    }
-
     fn rich_tag() -> Tag {
         let mut tag = Tag::new();
         tag.set_artist("Lead Artist");

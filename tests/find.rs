@@ -1,25 +1,12 @@
 //! End-to-end tests for `idk find`.
 
-use std::path::{Path, PathBuf};
-
-use assert_cmd::Command;
-use id3::{Tag, TagLike, Version};
+use id3::{Tag, TagLike};
 use predicates::prelude::*;
 use predicates::str::contains;
 use tempfile::TempDir;
 
-fn mp3(dir: &Path, name: &str, build: impl FnOnce(&mut Tag)) -> PathBuf {
-    let path = dir.join(name);
-    std::fs::write(&path, [0xFF, 0xFB, 0x90, 0x64, 0x00]).unwrap();
-    let mut tag = Tag::new();
-    build(&mut tag);
-    tag.write_to_path(&path, Version::Id3v24).unwrap();
-    path
-}
-
-fn idk() -> Command {
-    Command::cargo_bin("idk").unwrap()
-}
+mod common;
+use common::{idk, mp3};
 
 /// A library of three files, run from inside `dir` so output paths are short.
 fn library() -> TempDir {
@@ -153,15 +140,15 @@ fn unreadable_files_fail_but_matches_still_print() {
 fn invalid_conditions_exit_2() {
     let cases = [
         ("genre", "expected FIELD=VALUE, FIELD!=VALUE or FIELD~REGEX"),
-        ("genres=Rock", "invalid value 'genres'"),
+        ("genres=Rock", "unknown tag 'genres'"),
         ("title~(", "bad regex"),
-        ("artist=@nope", "invalid value 'nope'"),
+        ("artist=@nope", "unknown tag 'nope'"),
     ];
     for (condition, message) in cases {
         idk()
             .args(["find", "--where", condition, "x.mp3"])
             .assert()
             .code(2)
-            .stderr(contains(message).and(contains("possible values").or(contains("condition"))));
+            .stderr(contains(format!("invalid condition '{condition}'")).and(contains(message)));
     }
 }
