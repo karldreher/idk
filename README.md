@@ -46,6 +46,72 @@ Tag names are case-insensitive; `txxx:` descriptions are matched exactly.
 
 Exit codes: `0` success, `1` one or more files failed, `2` invalid usage.
 
+### Merge genres and artists
+
+Replace variant values with one canonical value. Matching ignores case and surrounding whitespace, `""` matches a missing or empty value, and genre references such as `(9)` match by name (`Metal`).
+
+```bash
+idk merge genres --from "Heavy Metal","Metal" --to Rock *.mp3
+idk merge artists --from "Beatles","the beatles" --to "The Beatles" *.mp3
+idk merge genres --from "" --to Unknown *.mp3            # fill missing genres
+idk merge genres --from ",Metal" --to Rock *.mp3         # fill missing and merge Metal
+```
+
+`--from` takes comma-separated values: quote each value that contains spaces (`--from "Heavy Metal","Metal"`), or repeat the flag (`--from "Heavy Metal" --from Metal`). The shell joins `"a","b"` into the single argument `a,b`, so idk splits on the commas. Values that themselves contain a comma belong in the config file's `from:` list. `merge genres` changes only `TCON`; `merge artists` changes only `TPE1`. `--dry-run`, `--jobs` and `--quiet` work as for `copy tags`.
+
+### Config file
+
+Operations can read their settings from YAML instead of flags. The top-level `tags` key is required, unknown keys are rejected, and each command reads only its own section.
+
+```yaml
+tags:
+  merge:
+    genres:
+      from:
+        - "Heavy Metal"
+        - "Metal"
+      to: Rock              # a single string, not a list
+    artists:
+      from:
+        - "Beatles"
+      to: The Beatles
+  copy:
+    from: artist
+    to: albumartist
+```
+
+```bash
+idk merge genres --config my-cool-file.yaml *.mp3
+idk merge artists *.mp3 --config      # bare --config reads ./idk.yaml
+idk copy tags *.mp3 --config
+```
+
+The config file is optional, but whenever one is given it is validated against idk's JSON Schema before any audio file is touched. Every violation is reported with its key path (for example `tags.merge.genres.to: ["Rock"] is not of type "string"`), and the run exits with `1`.
+
+`--config` can't be combined with `--from`/`--to`. A bare `--config` takes the next word as its file unless that word starts with `-`, so put it after the files (or before another flag).
+
+#### Schema
+
+```bash
+idk schema write                                  # writes ./idk.yaml.json
+idk schema write --file my-cool-file.yaml.json
+idk schema validate                               # validates ./idk.yaml
+idk schema validate --config my-cool-file.yaml
+```
+
+Reference the written schema from the top of a config file for editor completion and inline errors (YAML language server, used by VS Code's YAML extension and others):
+
+```yaml
+# yaml-language-server: $schema=./idk.yaml.json
+tags:
+  merge:
+    genres:
+      from: ["Heavy Metal", "Metal"]
+      to: Rock
+```
+
+`schema validate` exits `0` for a valid file and `1` otherwise, listing every violation.
+
 ### Show tags
 
 ```bash
