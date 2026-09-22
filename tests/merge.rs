@@ -1,40 +1,25 @@
 //! End-to-end tests for `idk merge genres` and `idk merge artists`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use assert_cmd::Command;
-use id3::{Tag, TagLike, Version};
+use id3::TagLike;
 use predicates::prelude::*;
 use predicates::str::contains;
 use tempfile::TempDir;
 
+mod common;
+use common::{idk, tag, write_config};
+
 fn mp3(dir: &TempDir, name: &str, genre: Option<&str>, artist: Option<&str>) -> PathBuf {
-    let path = dir.path().join(name);
-    std::fs::write(&path, [0xFF, 0xFB, 0x90, 0x64, 0x00]).unwrap();
-    let mut tag = Tag::new();
-    tag.set_title(name);
-    if let Some(genre) = genre {
-        tag.set_genre(genre);
-    }
-    if let Some(artist) = artist {
-        tag.set_artist(artist);
-    }
-    tag.write_to_path(&path, Version::Id3v24).unwrap();
-    path
-}
-
-fn tag(path: &Path) -> Tag {
-    Tag::read_from_path(path).unwrap()
-}
-
-fn idk() -> Command {
-    Command::cargo_bin("idk").unwrap()
-}
-
-fn write_config(dir: &TempDir, name: &str, yaml: &str) -> PathBuf {
-    let path = dir.path().join(name);
-    std::fs::write(&path, yaml).unwrap();
-    path
+    common::mp3(dir.path(), name, |tag| {
+        tag.set_title(name);
+        if let Some(genre) = genre {
+            tag.set_genre(genre);
+        }
+        if let Some(artist) = artist {
+            tag.set_artist(artist);
+        }
+    })
 }
 
 const CONFIG: &str = r#"tags:
@@ -146,7 +131,7 @@ fn leading_comma_adds_empty_source_to_fill_missing_values() {
 #[test]
 fn merges_genres_and_artists_from_config() {
     let dir = TempDir::new().unwrap();
-    let config = write_config(&dir, "idk.yaml", CONFIG);
+    let config = write_config(dir.path(), "idk.yaml", CONFIG);
     let file = mp3(&dir, "a.mp3", Some("Heavy Metal"), Some("the Beatles"));
 
     idk()
@@ -240,7 +225,7 @@ fn invalid_config_exits_1_before_touching_files() {
     ];
 
     for (yaml, message) in cases {
-        let config = write_config(&dir, "c.yaml", yaml);
+        let config = write_config(dir.path(), "c.yaml", yaml);
         idk()
             .args(["merge", "genres", "--config"])
             .arg(&config)

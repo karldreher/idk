@@ -98,20 +98,10 @@ mod tests {
     use super::*;
     use crate::outcome::Change;
     use crate::outcome::Outcome;
+    use crate::test_support::{AUDIO, mp3};
     use id3::Frame;
-    use std::path::PathBuf;
+
     use tempfile::TempDir;
-
-    const AUDIO: &[u8] = &[0xFF, 0xFB, 0x90, 0x64, 0x00, 0x11];
-
-    fn mp3(dir: &TempDir, build: impl FnOnce(&mut Tag)) -> PathBuf {
-        let path = dir.path().join("song.mp3");
-        std::fs::write(&path, AUDIO).unwrap();
-        let mut tag = Tag::new();
-        build(&mut tag);
-        tag.write_to_path(&path, Version::Id3v24).unwrap();
-        path
-    }
 
     fn rule(from: &[&str], to: &str) -> Rule {
         let from: Vec<String> = from.iter().map(|v| v.to_string()).collect();

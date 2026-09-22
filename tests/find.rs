@@ -1,25 +1,12 @@
 //! End-to-end tests for `idk find`.
 
-use std::path::{Path, PathBuf};
-
-use assert_cmd::Command;
-use id3::{Tag, TagLike, Version};
+use id3::{Tag, TagLike};
 use predicates::prelude::*;
 use predicates::str::contains;
 use tempfile::TempDir;
 
-fn mp3(dir: &Path, name: &str, build: impl FnOnce(&mut Tag)) -> PathBuf {
-    let path = dir.join(name);
-    std::fs::write(&path, [0xFF, 0xFB, 0x90, 0x64, 0x00]).unwrap();
-    let mut tag = Tag::new();
-    build(&mut tag);
-    tag.write_to_path(&path, Version::Id3v24).unwrap();
-    path
-}
-
-fn idk() -> Command {
-    Command::cargo_bin("idk").unwrap()
-}
+mod common;
+use common::{idk, mp3};
 
 /// A library of three files, run from inside `dir` so output paths are short.
 fn library() -> TempDir {

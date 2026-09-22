@@ -209,6 +209,7 @@ pub async fn run(args: ApplyArgs) -> ExitCode {
 mod tests {
     use super::*;
     use crate::outcome::Outcome;
+    use crate::test_support::{AUDIO, mp3};
     use id3::TagLike;
     use std::collections::HashSet;
     use tempfile::TempDir;
@@ -216,8 +217,6 @@ mod tests {
     fn keys(edits: &Edits) -> HashSet<&str> {
         edits.skipped_keys.iter().map(String::as_str).collect()
     }
-
-    const AUDIO: &[u8] = &[0xFF, 0xFB, 0x90, 0x64, 0x00];
 
     #[test]
     fn parses_edits_and_skips_non_field_keys() {
@@ -287,15 +286,6 @@ mod tests {
                 alias.display()
             )]
         );
-    }
-
-    fn mp3(dir: &TempDir, build: impl FnOnce(&mut Tag)) -> PathBuf {
-        let path = dir.path().join("a.mp3");
-        std::fs::write(&path, AUDIO).unwrap();
-        let mut tag = Tag::new();
-        build(&mut tag);
-        tag.write_to_path(&path, Version::Id3v24).unwrap();
-        path
     }
 
     fn apply(path: &Path, edits: &[Edit]) -> Outcome {

@@ -81,20 +81,10 @@ mod tests {
     use super::*;
     use crate::outcome::Change;
     use crate::outcome::Outcome;
+    use crate::test_support::{AUDIO, mp3, write_mp3};
     use id3::TagLike;
-    use std::path::PathBuf;
+
     use tempfile::TempDir;
-
-    const AUDIO: &[u8] = &[0xFF, 0xFB, 0x90, 0x64, 0x00, 0x11];
-
-    fn mp3(dir: &TempDir, build: impl FnOnce(&mut Tag), version: Version) -> PathBuf {
-        let path = dir.path().join("song.mp3");
-        std::fs::write(&path, AUDIO).unwrap();
-        let mut tag = Tag::new();
-        build(&mut tag);
-        tag.write_to_path(&path, version).unwrap();
-        path
-    }
 
     fn set(path: &Path, assignments: &[(TagField, &str)]) -> Outcome {
         let assignments: Vec<_> = assignments
@@ -110,7 +100,9 @@ mod tests {
     #[test]
     fn sets_several_fields_and_reports_each_change() {
         let dir = TempDir::new().unwrap();
-        let path = mp3(&dir, |tag| tag.set_genre("Pop"), Version::Id3v23);
+        let mut tag = Tag::new();
+        tag.set_genre("Pop");
+        let path = write_mp3(&dir, Some(&tag), Version::Id3v23);
 
         let outcome = set(
             &path,
@@ -154,7 +146,7 @@ mod tests {
     #[test]
     fn matching_values_leave_the_file_untouched() {
         let dir = TempDir::new().unwrap();
-        let path = mp3(&dir, |tag| tag.set_genre("Rock"), Version::Id3v24);
+        let path = mp3(&dir, |tag| tag.set_genre("Rock"));
         let bytes = std::fs::read(&path).unwrap();
 
         assert_eq!(set(&path, &[(TagField::Genre, "Rock")]), Outcome::Unchanged);
@@ -171,15 +163,11 @@ mod tests {
     #[test]
     fn clears_fields_and_reports_each_removal() {
         let dir = TempDir::new().unwrap();
-        let path = mp3(
-            &dir,
-            |tag| {
-                tag.set_genre("Rock");
-                tag.set_artist("Artist");
-                tag.set_text("TENC", "Encoder");
-            },
-            Version::Id3v24,
-        );
+        let path = mp3(&dir, |tag| {
+            tag.set_genre("Rock");
+            tag.set_artist("Artist");
+            tag.set_text("TENC", "Encoder");
+        });
 
         let outcome = clear(&path, &[TagField::Genre, TagField::Comment]);
 
@@ -201,7 +189,7 @@ mod tests {
     #[test]
     fn clearing_absent_fields_or_untagged_files_is_unchanged() {
         let dir = TempDir::new().unwrap();
-        let path = mp3(&dir, |tag| tag.set_artist("Artist"), Version::Id3v24);
+        let path = mp3(&dir, |tag| tag.set_artist("Artist"));
         let bytes = std::fs::read(&path).unwrap();
         assert_eq!(clear(&path, &[TagField::Genre]), Outcome::Unchanged);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);

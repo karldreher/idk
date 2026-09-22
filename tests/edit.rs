@@ -1,31 +1,20 @@
 //! End-to-end tests for `idk set tags` and `idk clear tags`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use assert_cmd::Command;
 use id3::{Tag, TagLike, Version};
 use predicates::prelude::*;
 use predicates::str::contains;
 use tempfile::TempDir;
 
-const AUDIO: [u8; 5] = [0xFF, 0xFB, 0x90, 0x64, 0x00];
+mod common;
+use common::{AUDIO, idk, tag};
 
 fn mp3(dir: &TempDir, name: &str, build: impl FnOnce(&mut Tag)) -> PathBuf {
-    let path = dir.path().join(name);
-    std::fs::write(&path, AUDIO).unwrap();
-    let mut tag = Tag::new();
-    tag.set_title(name);
-    build(&mut tag);
-    tag.write_to_path(&path, Version::Id3v24).unwrap();
-    path
-}
-
-fn tag(path: &Path) -> Tag {
-    Tag::read_from_path(path).unwrap()
-}
-
-fn idk() -> Command {
-    Command::cargo_bin("idk").unwrap()
+    common::mp3(dir.path(), name, |tag| {
+        tag.set_title(name);
+        build(tag);
+    })
 }
 
 #[test]

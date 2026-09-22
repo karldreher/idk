@@ -1,23 +1,14 @@
 //! End-to-end tests for `idk apply`.
 
-use std::path::{Path, PathBuf};
-
-use assert_cmd::Command;
 use id3::frame::{Comment, ExtendedText};
-use id3::{Tag, TagLike, Version};
+use id3::{Tag, TagLike};
 use predicates::prelude::*;
 use predicates::str::contains;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-fn mp3(dir: &Path, name: &str, build: impl FnOnce(&mut Tag)) -> PathBuf {
-    let path = dir.join(name);
-    std::fs::write(&path, [0xFF, 0xFB, 0x90, 0x64, 0x00]).unwrap();
-    let mut tag = Tag::new();
-    build(&mut tag);
-    tag.write_to_path(&path, Version::Id3v24).unwrap();
-    path
-}
+mod common;
+use common::{idk, mp3};
 
 fn rich(tag: &mut Tag) {
     tag.set_artist("Artist");
@@ -39,10 +30,6 @@ fn rich(tag: &mut Tag) {
         description: "Source".into(),
         value: "CD".into(),
     });
-}
-
-fn idk() -> Command {
-    Command::cargo_bin("idk").unwrap()
 }
 
 fn show_json(dir: &TempDir, files: &[&str]) -> Value {

@@ -196,18 +196,10 @@ pub async fn run(args: ShowArgs) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::mp3;
     use id3::TagLike;
     use id3::frame::Comment;
     use tempfile::TempDir;
-
-    fn tagged(dir: &TempDir, build: impl FnOnce(&mut Tag)) -> PathBuf {
-        let path = dir.path().join("song.mp3");
-        std::fs::write(&path, [0xFF, 0xFB, 0x90, 0x64]).unwrap();
-        let mut tag = Tag::new();
-        build(&mut tag);
-        tag.write_to_path(&path, Version::Id3v24).unwrap();
-        path
-    }
 
     fn entry(key: &str, value: &str) -> (String, String) {
         (key.to_owned(), value.to_owned())
@@ -216,7 +208,7 @@ mod tests {
     #[test]
     fn names_known_fields_and_keys_the_rest_by_frame_id() {
         let dir = TempDir::new().unwrap();
-        let path = tagged(&dir, |tag| {
+        let path = mp3(&dir, |tag| {
             tag.set_artist("Artist");
             tag.set_text("TENC", "Encoder");
             TagField::Txxx("custom".into()).write(tag, "x");
@@ -244,7 +236,7 @@ mod tests {
     #[test]
     fn filters_to_requested_fields() {
         let dir = TempDir::new().unwrap();
-        let path = tagged(&dir, |tag| {
+        let path = mp3(&dir, |tag| {
             tag.set_artist("Artist");
             tag.set_title("Title");
             tag.set_album("Album");
@@ -261,7 +253,7 @@ mod tests {
     #[test]
     fn joins_multiple_values_and_disambiguates_duplicate_keys() {
         let dir = TempDir::new().unwrap();
-        let path = tagged(&dir, |tag| {
+        let path = mp3(&dir, |tag| {
             tag.set_text("TCON", "Rock\0Pop");
             tag.set_text("TDRC", "2021");
             tag.set_text("TYER", "2021");
@@ -282,7 +274,7 @@ mod tests {
     #[test]
     fn hides_private_copyright_and_encoder_frames_unless_verbose() {
         let dir = TempDir::new().unwrap();
-        let path = tagged(&dir, |tag| {
+        let path = mp3(&dir, |tag| {
             tag.set_artist("Artist");
             tag.add_frame(id3::frame::Private {
                 owner_identifier: "www.amazon.com".into(),
