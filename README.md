@@ -46,6 +46,15 @@ Tag names are case-insensitive; `txxx:` descriptions are matched exactly.
 
 Exit codes: `0` success, `1` one or more files failed, `2` invalid usage.
 
+### Set tags
+
+```bash
+idk set tags --field albumartist="Various Artists" --field genre=Rock *.mp3
+idk set tags --field "txxx:Source=CD" --dry-run *.mp3
+```
+
+`--field FIELD=VALUE` is repeatable and split on the first `=`, so values may contain `=`. Fields take the names in the table above. Files without an ID3v2 tag get a new ID3v2.4 tag; files whose fields already match are not rewritten. An empty value (`genre=`) or naming a field twice is a usage error.
+
 ### Merge genres and artists
 
 Replace variant values with one canonical value. Matching ignores case and surrounding whitespace, `""` matches a missing or empty value, and genre references such as `(9)` match by name (`Metal`).

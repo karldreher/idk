@@ -351,6 +351,40 @@ impl TypedValueParser for TagFieldParser {
     }
 }
 
+/// clap value parser for `FIELD=VALUE`, splitting on the first `=`.
+///
+/// The value must not be empty; removing a field is `idk clear tags`.
+#[derive(Clone)]
+pub struct AssignmentParser;
+
+impl TypedValueParser for AssignmentParser {
+    type Value = (TagField, String);
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &OsStr,
+    ) -> Result<(TagField, String), clap::Error> {
+        let raw = value.to_string_lossy();
+        let invalid = |message: String| {
+            clap::Error::raw(ErrorKind::ValueValidation, format!("{message}\n")).with_cmd(cmd)
+        };
+        let Some((name, value)) = raw.split_once('=') else {
+            return Err(invalid(format!(
+                "invalid value '{raw}' for '--field': expected FIELD=VALUE"
+            )));
+        };
+        let field = TagFieldParser.parse_ref(cmd, arg, OsStr::new(name))?;
+        if value.is_empty() {
+            return Err(invalid(format!(
+                "empty value for '{field}'; use `idk clear tags --field {field}` to remove it"
+            )));
+        }
+        Ok((field, value.to_owned()))
+    }
+}
+
 /// Every accepted field for help and error output.
 fn possible_values() -> impl Iterator<Item = PossibleValue> {
     NAMED
