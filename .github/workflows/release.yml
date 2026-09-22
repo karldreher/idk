@@ -89,6 +89,7 @@ jobs:
             ${{ steps.package.outputs.archive }}
             ${{ steps.package.outputs.archive }}.sha256
           if-no-files-found: error
+          retention-days: 1
 
   release:
     name: Publish GitHub Release
