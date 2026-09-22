@@ -46,6 +46,23 @@ Tag names are case-insensitive; `txxx:` descriptions are matched exactly.
 
 Exit codes: `0` success, `1` one or more files failed, `2` invalid usage.
 
+### Set tags
+
+```bash
+idk set tags --field albumartist="Various Artists" --field genre=Rock *.mp3
+idk set tags --field "txxx:Source=CD" --dry-run *.mp3
+```
+
+`--field FIELD=VALUE` is repeatable and split on the first `=`, so values may contain `=`. Fields take the names in the table above. Files without an ID3v2 tag get a new ID3v2.4 tag; files whose fields already match are not rewritten. An empty value (`genre=`) or naming a field twice is a usage error.
+
+### Clear tags
+
+```bash
+idk clear tags --field comment --field "txxx:Source" *.mp3
+```
+
+`--field FIELD` is repeatable. `date` removes both `TDRC` and `TYER`; `comment` removes only comments with an empty description; `txxx:<description>` removes only that description. Files without the field (or without a tag) are unchanged and not rewritten.
+
 ### Merge genres and artists
 
 Replace variant values with one canonical value. Matching ignores case and surrounding whitespace, `""` matches a missing or empty value, and genre references such as `(9)` match by name (`Metal`).
@@ -120,7 +137,7 @@ idk show --json *.mp3 | jq '.[].tags.albumartist'
 idk show --field artist --field albumartist *.mp3
 ```
 
-Known frames are shown by the field names above; other frames by their frame ID (comments with a description as `COMM:<description>`). Pictures are summarized as `image/jpeg, 12345 bytes`. Output follows input order.
+Known frames are shown by the field names above; other frames by their frame ID (comments with a description as `COMM:<description>`). Pictures are summarized as `image/jpeg, 12345 bytes`. `PRIV` (vendor private data, e.g. Amazon's), `TCOP` (copyright) and `TSSE` (encoder settings) are hidden unless `-v/--verbose` is given; with it, `PRIV` is summarized as `www.amazon.com, 1024 bytes`. Output follows input order.
 
 With `--json`, stdout is one array:
 

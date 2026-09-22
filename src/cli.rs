@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use clap::{ArgAction, Args, Parser, Subcommand};
 
-use crate::tag_field::{TagField, TagFieldParser};
+use crate::tag_field::{AssignmentParser, TagField, TagFieldParser};
 
 /// Config file used when `--config` is given without a path.
 pub const DEFAULT_CONFIG: &str = "idk.yaml";
@@ -37,6 +37,18 @@ pub enum Command {
         #[command(subcommand)]
         target: MergeTarget,
     },
+    /// Remove fields.
+    Clear {
+        /// What to clear.
+        #[command(subcommand)]
+        target: ClearTarget,
+    },
+    /// Set fields to fixed values.
+    Set {
+        /// What to set.
+        #[command(subcommand)]
+        target: SetTarget,
+    },
     /// Print the tags of each input file.
     Show(ShowArgs),
     /// Work with the JSON Schema for config files.
@@ -62,6 +74,67 @@ pub enum SchemaAction {
         #[arg(long, value_name = "FILE", default_value = DEFAULT_CONFIG)]
         config: PathBuf,
     },
+}
+
+/// Things `idk clear` can clear.
+#[derive(Subcommand)]
+pub enum ClearTarget {
+    /// Remove one or more fields.
+    Tags(ClearTagsArgs),
+}
+
+/// Arguments for `idk clear tags`.
+#[derive(Args)]
+pub struct ClearTagsArgs {
+    /// Field to remove (repeatable).
+    #[arg(long = "field", value_name = "FIELD", value_parser = TagFieldParser, required = true)]
+    pub fields: Vec<TagField>,
+
+    /// MP3 files to update.
+    #[arg(required = true, value_name = "FILES")]
+    pub files: Vec<PathBuf>,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
+
+    /// Write options.
+    #[command(flatten)]
+    pub write: WriteOptions,
+}
+
+/// Things `idk set` can set.
+#[derive(Subcommand)]
+pub enum SetTarget {
+    /// Set one or more fields to fixed values, overwriting them.
+    Tags(SetTagsArgs),
+}
+
+/// Arguments for `idk set tags`.
+#[derive(Args)]
+pub struct SetTagsArgs {
+    /// Field and value, split on the first `=` (repeatable), e.g. albumartist="Various Artists".
+    ///
+    /// FIELD takes the same names as `idk copy tags --from`, including txxx:<description>.
+    #[arg(
+        long = "field",
+        value_name = "FIELD=VALUE",
+        value_parser = AssignmentParser,
+        required = true
+    )]
+    pub fields: Vec<(TagField, String)>,
+
+    /// MP3 files to update.
+    #[arg(required = true, value_name = "FILES")]
+    pub files: Vec<PathBuf>,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
+
+    /// Write options.
+    #[command(flatten)]
+    pub write: WriteOptions,
 }
 
 /// Fields `idk merge` can merge.
@@ -182,6 +255,10 @@ pub struct ShowArgs {
     /// Only show this field (repeatable).
     #[arg(long = "field", value_name = "FIELD", value_parser = TagFieldParser)]
     pub fields: Vec<TagField>,
+
+    /// Also show frames hidden by default: PRIV (private data), TCOP (copyright), TSSE (encoder settings).
+    #[arg(short, long)]
+    pub verbose: bool,
 
     /// MP3 files to read.
     #[arg(required = true, value_name = "FILES")]

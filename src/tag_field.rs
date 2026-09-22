@@ -202,6 +202,24 @@ impl TagField {
             field => tag.set_text(field.text_frame().expect("text field"), value),
         }
     }
+
+    /// Removes this field from `tag`.
+    ///
+    /// `date` removes both TDRC and TYER; `comment` removes only comments with an
+    /// empty description; `txxx:<desc>` removes only that description.
+    pub fn remove(&self, tag: &mut Tag) {
+        match self {
+            TagField::Date => {
+                tag.remove("TDRC");
+                tag.remove("TYER");
+            }
+            TagField::Comment => tag.remove_comment(Some(""), None),
+            TagField::Txxx(description) => tag.remove_extended_text(Some(description), None),
+            field => {
+                tag.remove(field.text_frame().expect("text field"));
+            }
+        }
+    }
 }
 
 /// The leading four-digit year of a date such as `2021-06-01`, or the input unchanged.
@@ -351,6 +369,40 @@ impl TypedValueParser for TagFieldParser {
     }
 }
 
+/// clap value parser for `FIELD=VALUE`, splitting on the first `=`.
+///
+/// The value must not be empty; removing a field is `idk clear tags`.
+#[derive(Clone)]
+pub struct AssignmentParser;
+
+impl TypedValueParser for AssignmentParser {
+    type Value = (TagField, String);
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &OsStr,
+    ) -> Result<(TagField, String), clap::Error> {
+        let raw = value.to_string_lossy();
+        let invalid = |message: String| {
+            clap::Error::raw(ErrorKind::ValueValidation, format!("{message}\n")).with_cmd(cmd)
+        };
+        let Some((name, value)) = raw.split_once('=') else {
+            return Err(invalid(format!(
+                "invalid value '{raw}' for '--field': expected FIELD=VALUE"
+            )));
+        };
+        let field = TagFieldParser.parse_ref(cmd, arg, OsStr::new(name))?;
+        if value.is_empty() {
+            return Err(invalid(format!(
+                "empty value for '{field}'; use `idk clear tags --field {field}` to remove it"
+            )));
+        }
+        Ok((field, value.to_owned()))
+    }
+}
+
 /// Every accepted field for help and error output.
 fn possible_values() -> impl Iterator<Item = PossibleValue> {
     NAMED
@@ -494,6 +546,44 @@ mod tests {
             .map(|c| (c.description.as_str(), c.text.as_str()))
             .collect();
         assert_eq!(comments, [("note", "keep"), ("", "new")]);
+    }
+
+    #[test]
+    fn remove_is_scoped_like_write() {
+        let mut tag = Tag::with_version(Version::Id3v24);
+        tag.set_text("TDRC", "2021");
+        tag.set_text("TYER", "2021");
+        tag.add_frame(Comment {
+            lang: "eng".into(),
+            description: "".into(),
+            text: "plain".into(),
+        });
+        tag.add_frame(Comment {
+            lang: "eng".into(),
+            description: "note".into(),
+            text: "keep".into(),
+        });
+        TagField::Txxx("drop".into()).write(&mut tag, "x");
+        TagField::Txxx("keep".into()).write(&mut tag, "y");
+        tag.set_title("Title");
+
+        for field in [
+            TagField::Date,
+            TagField::Comment,
+            TagField::Txxx("drop".into()),
+            TagField::Title,
+        ] {
+            field.remove(&mut tag);
+            assert_eq!(field.read(&tag), None, "{field}");
+        }
+
+        let ids: Vec<_> = tag.frames().map(|f| f.id().to_owned()).collect();
+        assert_eq!(ids, ["COMM", "TXXX"]);
+        assert_eq!(tag.comments().next().unwrap().description, "note");
+        assert_eq!(
+            TagField::Txxx("keep".into()).read(&tag).as_deref(),
+            Some("y")
+        );
     }
 
     #[test]

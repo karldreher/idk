@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod copy;
+mod edit;
 mod merge;
 mod outcome;
 mod runner;
@@ -13,7 +14,10 @@ use std::process::ExitCode;
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser};
 
-use cli::{Cli, Command, CopyTagsArgs, CopyTarget, MergeArgs, MergeTarget, SchemaAction};
+use cli::{
+    ClearTarget, Cli, Command, CopyTagsArgs, CopyTarget, MergeArgs, MergeTarget, SchemaAction,
+    SetTarget,
+};
 use config::{Config, ConfigError};
 use tag_field::TagField;
 
@@ -56,6 +60,18 @@ async fn main() -> ExitCode {
             };
             merge::run(args, field, rule).await
         }
+        Command::Clear {
+            target: ClearTarget::Tags(args),
+        } => {
+            reject_duplicate_fields(args.fields.iter());
+            edit::run_clear(args).await
+        }
+        Command::Set {
+            target: SetTarget::Tags(args),
+        } => {
+            reject_duplicate_fields(args.fields.iter().map(|(field, _)| field));
+            edit::run_set(args).await
+        }
         Command::Show(args) => show::run(args).await,
         Command::Schema {
             action: SchemaAction::Write { file },
@@ -63,6 +79,22 @@ async fn main() -> ExitCode {
         Command::Schema {
             action: SchemaAction::Validate { config },
         } => schema::validate(&config).await,
+    }
+}
+
+/// Exits with a usage error when any `--field` is named twice.
+fn reject_duplicate_fields<'a>(fields: impl Iterator<Item = &'a TagField>) {
+    let mut seen = Vec::new();
+    for field in fields {
+        if seen.contains(&field) {
+            Cli::command()
+                .error(
+                    ErrorKind::ArgumentConflict,
+                    format!("--field {field} given more than once"),
+                )
+                .exit();
+        }
+        seen.push(field);
     }
 }
 
