@@ -1,7 +1,10 @@
+mod apply;
 mod cli;
 mod config;
 mod copy;
 mod edit;
+mod find;
+mod input;
 mod merge;
 mod outcome;
 mod runner;
@@ -45,6 +48,7 @@ async fn main() -> ExitCode {
             }
             copy::run(args, from, to).await
         }
+        Command::Find(args) => find::run(args).await,
         Command::Merge { target } => {
             let (field, key, args) = match target {
                 MergeTarget::Genres(args) => (TagField::Genre, "genres", args),
@@ -60,6 +64,7 @@ async fn main() -> ExitCode {
             };
             merge::run(args, field, rule).await
         }
+        Command::Apply(args) => apply::run(args).await,
         Command::Clear {
             target: ClearTarget::Tags(args),
         } => {

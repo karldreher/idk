@@ -8,6 +8,7 @@ use id3::{Content, Frame, Tag, Version};
 use serde_json::{Map, Value, json};
 
 use crate::cli::ShowArgs;
+use crate::input;
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
 
@@ -76,8 +77,7 @@ fn unique_key(entries: &[(String, String)], key: String) -> String {
 /// Human-readable value of a frame. Pictures and private data are summarized, never dumped.
 fn frame_value(frame: &Frame) -> String {
     match frame.content() {
-        // ID3v2.4 separates multiple values with NUL.
-        Content::Text(text) => text.replace('\0', "; "),
+        Content::Text(text) => display_value(text),
         Content::ExtendedText(extended) => extended.value.clone(),
         Content::Comment(comment) => comment.text.clone(),
         Content::Unknown(unknown) if matches!(frame.id(), "APIC" | "PIC") => {
@@ -90,6 +90,13 @@ fn frame_value(frame: &Frame) -> String {
         ),
         content => content.to_string(),
     }
+}
+
+/// How a text value is shown: ID3v2.4 multiple values (NUL-separated) are joined with `; `.
+///
+/// `idk apply` compares against this rendering, so unedited `show --json` output is a no-op.
+pub fn display_value(raw: &str) -> String {
+    raw.replace('\0', "; ")
 }
 
 /// `image/jpeg, 12345 bytes` for a raw (undecoded) picture frame.
@@ -156,11 +163,12 @@ pub async fn run(args: ShowArgs) -> ExitCode {
     let fields = args.fields.clone();
     let verbose = args.verbose;
     let mut json_files = Vec::new();
-    let mut failed = false;
+    let inputs = input::resolve(args.input.clone()).await;
+    let mut failed = inputs.failures > 0;
     let mut first = true;
 
     runner::process(
-        args.files.clone(),
+        inputs.files,
         args.run.jobs(),
         Order::Input,
         show_progress,

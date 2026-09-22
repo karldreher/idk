@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use id3::{Tag, Version};
 
-use crate::cli::{ClearTagsArgs, RunOptions, SetTagsArgs, WriteOptions};
+use crate::cli::{ClearTagsArgs, InputArgs, RunOptions, SetTagsArgs, WriteOptions};
+use crate::input;
 use crate::outcome::{Change, Plan, Report};
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
@@ -57,7 +58,7 @@ fn plan_changes<'a>(fields: impl Iterator<Item = &'a TagField>, before: Tag, aft
 /// Runs `idk set tags` over every input file and returns the process exit code.
 pub async fn run_set(args: SetTagsArgs) -> ExitCode {
     let assignments = Arc::new(args.fields);
-    run_plans(args.files, &args.run, &args.write, move |path| {
+    run_plans(args.input, &args.run, &args.write, move |path| {
         plan_set(path, &assignments)
     })
     .await
@@ -66,7 +67,7 @@ pub async fn run_set(args: SetTagsArgs) -> ExitCode {
 /// Runs `idk clear tags` over every input file and returns the process exit code.
 pub async fn run_clear(args: ClearTagsArgs) -> ExitCode {
     let fields = Arc::new(args.fields);
-    run_plans(args.files, &args.run, &args.write, move |path| {
+    run_plans(args.input, &args.run, &args.write, move |path| {
         plan_clear(path, &fields)
     })
     .await
@@ -74,15 +75,17 @@ pub async fn run_clear(args: ClearTagsArgs) -> ExitCode {
 
 /// Plans and applies an edit on every file concurrently, then prints the summary.
 async fn run_plans(
-    files: Vec<std::path::PathBuf>,
+    input: InputArgs,
     run: &RunOptions,
     write: &WriteOptions,
     plan: impl Fn(&Path) -> id3::Result<Plan> + Send + Sync + 'static,
 ) -> ExitCode {
     let dry_run = write.dry_run;
     let mut report = Report::new(dry_run);
+    let inputs = input::resolve(input).await;
+    report.add_failures(inputs.failures);
     runner::process(
-        files,
+        inputs.files,
         run.jobs(),
         Order::Completion,
         !run.quiet,

@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use clap::{ArgAction, Args, Parser, Subcommand};
 
+use crate::find::{Condition, ConditionParser};
 use crate::tag_field::{AssignmentParser, TagField, TagFieldParser};
 
 /// Config file used when `--config` is given without a path.
@@ -31,12 +32,16 @@ pub enum Command {
         #[command(subcommand)]
         target: CopyTarget,
     },
+    /// Print the files whose tags match every condition.
+    Find(FindArgs),
     /// Merge variant values of a field into one value.
     Merge {
         /// Which field to merge.
         #[command(subcommand)]
         target: MergeTarget,
     },
+    /// Apply tag edits from `idk show --json` output.
+    Apply(ApplyArgs),
     /// Remove fields.
     Clear {
         /// What to clear.
@@ -76,6 +81,57 @@ pub enum SchemaAction {
     },
 }
 
+/// Arguments for `idk apply`.
+#[derive(Args)]
+pub struct ApplyArgs {
+    /// JSON in the `idk show --json` format; "-" reads stdin.
+    #[arg(value_name = "PATH")]
+    pub source: PathBuf,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
+
+    /// Write options.
+    #[command(flatten)]
+    pub write: WriteOptions,
+}
+
+/// Arguments for `idk find`.
+#[derive(Args)]
+pub struct FindArgs {
+    /// Condition (repeatable): FIELD=VALUE, FIELD!=VALUE or FIELD~REGEX.
+    ///
+    /// A missing field compares as "". A VALUE of @FIELD compares against another
+    /// field, e.g. albumartist!=@artist. All conditions must match.
+    #[arg(long = "where", value_name = "COND", value_parser = ConditionParser)]
+    pub conditions: Vec<Condition>,
+
+    /// Match files where this field is absent or empty (repeatable).
+    #[arg(long, value_name = "FIELD", value_parser = TagFieldParser)]
+    pub missing: Vec<TagField>,
+
+    /// Match files where this field has a value (repeatable).
+    #[arg(long, value_name = "FIELD", value_parser = TagFieldParser)]
+    pub present: Vec<TagField>,
+
+    /// Compare values and regexes case-insensitively.
+    #[arg(short, long)]
+    pub ignore_case: bool,
+
+    /// Separate printed paths with NUL instead of newlines (for xargs -0 or --files-from).
+    #[arg(short = '0', long)]
+    pub null: bool,
+
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
+}
+
 /// Things `idk clear` can clear.
 #[derive(Subcommand)]
 pub enum ClearTarget {
@@ -90,9 +146,9 @@ pub struct ClearTagsArgs {
     #[arg(long = "field", value_name = "FIELD", value_parser = TagFieldParser, required = true)]
     pub fields: Vec<TagField>,
 
-    /// MP3 files to update.
-    #[arg(required = true, value_name = "FILES")]
-    pub files: Vec<PathBuf>,
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -124,9 +180,9 @@ pub struct SetTagsArgs {
     )]
     pub fields: Vec<(TagField, String)>,
 
-    /// MP3 files to update.
-    #[arg(required = true, value_name = "FILES")]
-    pub files: Vec<PathBuf>,
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -178,9 +234,9 @@ pub struct MergeArgs {
     )]
     pub config: Option<PathBuf>,
 
-    /// MP3 files to update.
-    #[arg(required = true, value_name = "FILES")]
-    pub files: Vec<PathBuf>,
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -232,9 +288,9 @@ pub struct CopyTagsArgs {
     #[arg(long)]
     pub fail_on_empty: bool,
 
-    /// MP3 files to update.
-    #[arg(required = true, value_name = "FILES")]
-    pub files: Vec<PathBuf>,
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -260,9 +316,9 @@ pub struct ShowArgs {
     #[arg(short, long)]
     pub verbose: bool,
 
-    /// MP3 files to read.
-    #[arg(required = true, value_name = "FILES")]
-    pub files: Vec<PathBuf>,
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -275,6 +331,22 @@ pub struct WriteOptions {
     /// Show what would change without writing any file.
     #[arg(short = 'n', long)]
     pub dry_run: bool,
+}
+
+/// Files an operation reads, shared by every file-processing command.
+#[derive(Args, Clone)]
+pub struct InputArgs {
+    /// MP3 files, directories (with -r) or glob patterns such as "*.mp3" or "**/*.mp3".
+    #[arg(required_unless_present = "files_from", value_name = "FILES")]
+    pub files: Vec<PathBuf>,
+
+    /// Walk directories recursively, including every .mp3 file.
+    #[arg(short, long)]
+    pub recursive: bool,
+
+    /// Also read inputs from a file, one per line (or NUL-separated); "-" reads stdin.
+    #[arg(long, value_name = "PATH")]
+    pub files_from: Option<PathBuf>,
 }
 
 /// Execution options shared by file-processing operations.

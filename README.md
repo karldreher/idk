@@ -11,6 +11,17 @@ cargo install --path .
 
 ## Usage
 
+### Input files
+
+Every command that takes `FILES` accepts:
+
+- **Paths** to MP3 files. A path that exists is always used literally, so names like `Song [Live].mp3` are safe.
+- **Glob patterns** (`*`, `?`, `[...]`, `**`), expanded by idk itself so they work the same in Windows `cmd`/PowerShell as in Unix shells. Quote them to let idk expand them: `idk show "**/*.mp3"`. A pattern that matches nothing is an error.
+- **Directories** with `-r/--recursive`, walked for `.mp3` files (any case), sorted by name. Without `-r`, a directory is an error.
+- **File lists** with `--files-from <PATH>` (or `-` for stdin): one input per line, or NUL-separated (for `find -print0` / `idk find -0`). Entries follow the same rules and come after the positional inputs.
+
+Results are de-duplicated, so overlapping inputs process each file once. Input errors are reported and count as failures (exit `1`); the remaining files are still processed.
+
 ### Copy one tag into another
 
 ```bash
@@ -129,6 +140,27 @@ tags:
 
 `schema validate` exits `0` for a valid file and `1` otherwise, listing every violation.
 
+### Find files by tag
+
+```bash
+idk find -r ~/Music --missing albumartist
+idk find -r ~/Music --where albumartist!=@artist --where genre~^metal -i
+idk find -r ~/Music --missing genre -0 | idk set tags --field genre=Unknown --files-from -
+```
+
+Prints the path of every file matching **all** conditions, in input order:
+
+| Condition                 | Matches when                                    |
+|---------------------------|-------------------------------------------------|
+| `--where FIELD=VALUE`     | the field equals VALUE (a missing field is `""`) |
+| `--where FIELD!=VALUE`    | the field differs from VALUE                    |
+| `--where FIELD~REGEX`     | the field matches the regex                     |
+| `--where FIELD=@OTHER`    | the field equals another field (`!=@` to differ) |
+| `--missing FIELD`         | the field is absent or empty                    |
+| `--present FIELD`         | the field has a value                           |
+
+`-i/--ignore-case` applies to `=`, `!=` and `~`. `-0/--null` separates paths with NUL for `xargs -0` or `--files-from`. Invalid conditions exit `2` before any file is read; unreadable files exit `1`. Finding no matches is still exit `0`.
+
 ### Show tags
 
 ```bash
@@ -146,6 +178,20 @@ With `--json`, stdout is one array:
 ```
 
 Files without an ID3v2 tag have `"version": null` and empty `tags`. `-j/--jobs` and `-q/--quiet` apply as for `copy tags`.
+
+### Apply edits from JSON
+
+```bash
+idk show --json *.mp3 > tags.json
+$EDITOR tags.json                       # or: jq '.[].tags.genre = "Rock"' ...
+idk apply tags.json --dry-run
+idk apply tags.json
+idk show --json *.mp3 | jq '.[].tags.album |= ascii_upcase' | idk apply -
+```
+
+Takes the `show --json` format (`-` reads stdin). For each entry, every `tags` key naming a field is written when its value differs from what `show` prints; `null` clears the field; keys left out are untouched. Keys that aren't field names (frame IDs like `TENC`, `COMM:<description>`, `date#2`) are skipped with a warning, and `version` is ignored. Applying unedited `show` output changes nothing.
+
+Malformed JSON, a wrong shape, non-string values or the same file listed twice exit `2` before any file is touched. Missing files are failures (exit `1`) while other entries still apply. Values joined with `; ` by `show` are written back as a single value if edited.
 
 ## Release
 

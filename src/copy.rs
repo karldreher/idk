@@ -6,6 +6,7 @@ use std::process::ExitCode;
 use id3::Tag;
 
 use crate::cli::CopyTagsArgs;
+use crate::input;
 use crate::outcome::{Change, Outcome, Plan, Report};
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
@@ -53,8 +54,10 @@ pub async fn run(args: CopyTagsArgs, from: TagField, to: TagField) -> ExitCode {
     let dry_run = args.write.dry_run;
     let fail_on_empty = args.fail_on_empty;
     let mut report = Report::new(dry_run);
+    let inputs = input::resolve(args.input.clone()).await;
+    report.add_failures(inputs.failures);
     runner::process(
-        args.files.clone(),
+        inputs.files,
         args.run.jobs(),
         Order::Completion,
         !args.run.quiet,
