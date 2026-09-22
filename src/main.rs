@@ -1,3 +1,4 @@
+mod apply;
 mod cli;
 mod config;
 mod copy;
@@ -63,6 +64,7 @@ async fn main() -> ExitCode {
             };
             merge::run(args, field, rule).await
         }
+        Command::Apply(args) => apply::run(args).await,
         Command::Clear {
             target: ClearTarget::Tags(args),
         } => {

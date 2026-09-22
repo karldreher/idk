@@ -40,6 +40,8 @@ pub enum Command {
         #[command(subcommand)]
         target: MergeTarget,
     },
+    /// Apply tag edits from `idk show --json` output.
+    Apply(ApplyArgs),
     /// Remove fields.
     Clear {
         /// What to clear.
@@ -77,6 +79,22 @@ pub enum SchemaAction {
         #[arg(long, value_name = "FILE", default_value = DEFAULT_CONFIG)]
         config: PathBuf,
     },
+}
+
+/// Arguments for `idk apply`.
+#[derive(Args)]
+pub struct ApplyArgs {
+    /// JSON in the `idk show --json` format; "-" reads stdin.
+    #[arg(value_name = "PATH")]
+    pub source: PathBuf,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
+
+    /// Write options.
+    #[command(flatten)]
+    pub write: WriteOptions,
 }
 
 /// Arguments for `idk find`.

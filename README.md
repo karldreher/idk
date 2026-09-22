@@ -179,6 +179,20 @@ With `--json`, stdout is one array:
 
 Files without an ID3v2 tag have `"version": null` and empty `tags`. `-j/--jobs` and `-q/--quiet` apply as for `copy tags`.
 
+### Apply edits from JSON
+
+```bash
+idk show --json *.mp3 > tags.json
+$EDITOR tags.json                       # or: jq '.[].tags.genre = "Rock"' ...
+idk apply tags.json --dry-run
+idk apply tags.json
+idk show --json *.mp3 | jq '.[].tags.album |= ascii_upcase' | idk apply -
+```
+
+Takes the `show --json` format (`-` reads stdin). For each entry, every `tags` key naming a field is written when its value differs from what `show` prints; `null` clears the field; keys left out are untouched. Keys that aren't field names (frame IDs like `TENC`, `COMM:<description>`, `date#2`) are skipped with a warning, and `version` is ignored. Applying unedited `show` output changes nothing.
+
+Malformed JSON, a wrong shape, non-string values or the same file listed twice exit `2` before any file is touched. Missing files are failures (exit `1`) while other entries still apply. Values joined with `; ` by `show` are written back as a single value if edited.
+
 ## Release
 
 1. Bump `version` in `Cargo.toml` and merge to `main`.
