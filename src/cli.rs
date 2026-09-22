@@ -90,9 +90,9 @@ pub struct ClearTagsArgs {
     #[arg(long = "field", value_name = "FIELD", value_parser = TagFieldParser, required = true)]
     pub fields: Vec<TagField>,
 
-    /// MP3 files to update.
-    #[arg(required = true, value_name = "FILES")]
-    pub files: Vec<PathBuf>,
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -124,9 +124,9 @@ pub struct SetTagsArgs {
     )]
     pub fields: Vec<(TagField, String)>,
 
-    /// MP3 files to update.
-    #[arg(required = true, value_name = "FILES")]
-    pub files: Vec<PathBuf>,
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -178,9 +178,9 @@ pub struct MergeArgs {
     )]
     pub config: Option<PathBuf>,
 
-    /// MP3 files to update.
-    #[arg(required = true, value_name = "FILES")]
-    pub files: Vec<PathBuf>,
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -232,9 +232,9 @@ pub struct CopyTagsArgs {
     #[arg(long)]
     pub fail_on_empty: bool,
 
-    /// MP3 files to update.
-    #[arg(required = true, value_name = "FILES")]
-    pub files: Vec<PathBuf>,
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -260,9 +260,9 @@ pub struct ShowArgs {
     #[arg(short, long)]
     pub verbose: bool,
 
-    /// MP3 files to read.
-    #[arg(required = true, value_name = "FILES")]
-    pub files: Vec<PathBuf>,
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
 
     /// Execution options.
     #[command(flatten)]
@@ -275,6 +275,14 @@ pub struct WriteOptions {
     /// Show what would change without writing any file.
     #[arg(short = 'n', long)]
     pub dry_run: bool,
+}
+
+/// Files an operation reads, shared by every file-processing command.
+#[derive(Args, Clone)]
+pub struct InputArgs {
+    /// MP3 files to process.
+    #[arg(required = true, value_name = "FILES")]
+    pub files: Vec<PathBuf>,
 }
 
 /// Execution options shared by file-processing operations.

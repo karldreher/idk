@@ -8,6 +8,7 @@ use id3::{Content, Frame, Tag, Version};
 use serde_json::{Map, Value, json};
 
 use crate::cli::ShowArgs;
+use crate::input;
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
 
@@ -156,11 +157,12 @@ pub async fn run(args: ShowArgs) -> ExitCode {
     let fields = args.fields.clone();
     let verbose = args.verbose;
     let mut json_files = Vec::new();
-    let mut failed = false;
+    let inputs = input::resolve(args.input.clone()).await;
+    let mut failed = inputs.failures > 0;
     let mut first = true;
 
     runner::process(
-        args.files.clone(),
+        inputs.files,
         args.run.jobs(),
         Order::Input,
         show_progress,

@@ -2,6 +2,7 @@ mod cli;
 mod config;
 mod copy;
 mod edit;
+mod input;
 mod merge;
 mod outcome;
 mod runner;

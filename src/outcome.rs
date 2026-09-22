@@ -131,6 +131,11 @@ impl Report {
         }
     }
 
+    /// Counts `count` failures that happened outside [`Report::record`], such as bad inputs.
+    pub fn add_failures(&mut self, count: usize) {
+        self.failed += count;
+    }
+
     /// One-line summary; `skipped` labels the skipped count, or omits it when `None`.
     pub fn summary(&self, skipped: Option<&str>) -> String {
         let updated = if self.dry_run {

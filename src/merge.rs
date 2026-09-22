@@ -8,6 +8,7 @@ use std::sync::Arc;
 use id3::{Tag, TagLike, Version};
 
 use crate::cli::MergeArgs;
+use crate::input;
 use crate::outcome::{Change, Plan, Report};
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
@@ -75,8 +76,10 @@ pub async fn run(args: MergeArgs, field: TagField, rule: Rule) -> ExitCode {
     let mut report = Report::new(dry_run);
     let rule = Arc::new(rule);
     let task_field = field.clone();
+    let inputs = input::resolve(args.input.clone()).await;
+    report.add_failures(inputs.failures);
     runner::process(
-        args.files.clone(),
+        inputs.files,
         args.run.jobs(),
         Order::Completion,
         !args.run.quiet,
