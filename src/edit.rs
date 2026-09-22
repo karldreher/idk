@@ -2,16 +2,14 @@
 
 use std::path::Path;
 use std::process::ExitCode;
-use std::sync::Arc;
 
 use id3::{Tag, Version};
 
 use clap::error::ErrorKind;
 
-use crate::cli::{ClearTagsArgs, InputArgs, RunOptions, SetTagsArgs, WriteOptions, usage_error};
+use crate::cli::{ClearTagsArgs, SetTagsArgs, usage_error};
 use crate::input;
-use crate::outcome::{Plan, Report};
-use crate::runner::{self, Order};
+use crate::outcome::{Plan, run_writes};
 use crate::tag_field::TagField;
 
 /// Reads the file at `path` and works out the effect of setting every field in `assignments`.
@@ -45,9 +43,10 @@ pub fn plan_clear(path: &Path, fields: &[TagField]) -> id3::Result<Plan> {
 /// Runs `idk set tags` over every input file and returns the process exit code.
 pub async fn run_set(args: SetTagsArgs) -> ExitCode {
     reject_duplicates(args.fields.iter().map(|(field, _)| field));
-    let assignments = Arc::new(args.fields);
-    run_plans(args.input, &args.run, &args.write, move |path| {
-        plan_set(path, &assignments)
+    let assignments = args.fields;
+    let inputs = input::resolve(args.input).await;
+    run_writes(inputs, &args.run, &args.write, None, move |path| {
+        plan_set(path, &assignments).map_err(|err| err.to_string())
     })
     .await
 }
@@ -55,9 +54,10 @@ pub async fn run_set(args: SetTagsArgs) -> ExitCode {
 /// Runs `idk clear tags` over every input file and returns the process exit code.
 pub async fn run_clear(args: ClearTagsArgs) -> ExitCode {
     reject_duplicates(args.fields.iter());
-    let fields = Arc::new(args.fields);
-    run_plans(args.input, &args.run, &args.write, move |path| {
-        plan_clear(path, &fields)
+    let fields = args.fields;
+    let inputs = input::resolve(args.input).await;
+    run_writes(inputs, &args.run, &args.write, None, move |path| {
+        plan_clear(path, &fields).map_err(|err| err.to_string())
     })
     .await
 }
@@ -74,37 +74,6 @@ fn reject_duplicates<'a>(fields: impl Iterator<Item = &'a TagField>) {
         }
         seen.push(field);
     }
-}
-
-/// Plans and applies an edit on every file concurrently, then prints the summary.
-async fn run_plans(
-    input: InputArgs,
-    run: &RunOptions,
-    write: &WriteOptions,
-    plan: impl Fn(&Path) -> id3::Result<Plan> + Send + Sync + 'static,
-) -> ExitCode {
-    let dry_run = write.dry_run;
-    let mut report = Report::new(dry_run);
-    let inputs = input::resolve(input).await;
-    report.add_failures(inputs.failures);
-    runner::process(
-        inputs.files,
-        run.jobs(),
-        Order::Completion,
-        !run.quiet,
-        move |path| {
-            plan(path)
-                .and_then(|plan| plan.apply(path, dry_run))
-                .map_err(|err| err.to_string())
-        },
-        |progress, path, result| report.record(&path, result, progress),
-    )
-    .await;
-
-    if !run.quiet {
-        println!("{}", report.summary(None));
-    }
-    report.exit_code()
 }
 
 #[cfg(test)]

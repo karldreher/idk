@@ -10,8 +10,7 @@ use clap::error::ErrorKind;
 use crate::cli::{CopyTagsArgs, usage_error};
 use crate::config::{Config, ConfigError};
 use crate::input;
-use crate::outcome::{Outcome, Plan, Report};
-use crate::runner::{self, Order};
+use crate::outcome::{Plan, run_writes};
 use crate::tag_field::TagField;
 
 /// The fields to copy between: `--from`/`--to`, or `tags.copy` in `--config`.
@@ -64,19 +63,6 @@ pub fn plan_copy(path: &Path, from: &TagField, to: &TagField) -> id3::Result<Pla
     Ok(Plan::from_diff([to], &before, tag))
 }
 
-/// Copies the value of `from` into `to` in the file at `path`.
-///
-/// The destination is overwritten. Every other frame, the tag version and the
-/// audio data are preserved. The file is only written when its tag changes.
-pub fn copy_tag(
-    path: &Path,
-    from: &TagField,
-    to: &TagField,
-    dry_run: bool,
-) -> id3::Result<Outcome> {
-    plan_copy(path, from, to)?.apply(path, dry_run)
-}
-
 /// Runs `idk copy tags` over every input file and returns the process exit code.
 ///
 /// Files are processed concurrently, up to `--jobs` at a time. A file with an
@@ -86,35 +72,35 @@ pub async fn run(args: CopyTagsArgs) -> ExitCode {
         Ok(fields) => fields,
         Err(err) => return err.report(),
     };
-    let summary_label = format!("no {from}");
-    let dry_run = args.write.dry_run;
+    let skipped = format!("no {from}");
     let fail_on_empty = args.fail_on_empty;
-    let mut report = Report::new(dry_run);
-    let inputs = input::resolve(args.input.clone()).await;
-    report.add_failures(inputs.failures);
-    runner::process(
-        inputs.files,
-        args.run.jobs(),
-        Order::Completion,
-        !args.run.quiet,
-        move |path| match copy_tag(path, &from, &to, dry_run) {
-            Ok(Outcome::Skipped) if fail_on_empty => Err(format!("no {from} value")),
-            result => result.map_err(|err| err.to_string()),
+    let inputs = input::resolve(args.input).await;
+    run_writes(
+        inputs,
+        &args.run,
+        &args.write,
+        Some(&skipped),
+        move |path| match plan_copy(path, &from, &to) {
+            Ok(Plan::Skipped) if fail_on_empty => Err(format!("no {from} value")),
+            plan => plan.map_err(|err| err.to_string()),
         },
-        |progress, path, result| report.record(&path, result, progress),
     )
-    .await;
-
-    if !args.run.quiet {
-        println!("{}", report.summary(Some(&summary_label)));
-    }
-    report.exit_code()
+    .await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::outcome::Change;
+    use crate::outcome::{Change, Outcome};
+
+    fn copy_tag(
+        path: &Path,
+        from: &TagField,
+        to: &TagField,
+        dry_run: bool,
+    ) -> id3::Result<Outcome> {
+        plan_copy(path, from, to)?.apply(path, dry_run)
+    }
     use id3::frame::{Comment, ExtendedText};
     use id3::{Frame, TagLike, Version};
     use std::path::PathBuf;
