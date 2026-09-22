@@ -264,7 +264,9 @@ fn usage_errors_exit_2_before_touching_files() {
         .arg(&file)
         .assert()
         .code(2)
-        .stderr(contains("--to must not be empty"));
+        .stderr(contains(
+            "invalid value ' ' for '--to <VALUE>': must not be empty",
+        ));
     idk()
         .args(["merge", "genres", "--to", "Rock", "--config", "c.yaml"])
         .arg(&file)

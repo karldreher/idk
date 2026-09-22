@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use id3::{Tag, Version};
 
-use crate::cli::{ClearTagsArgs, InputArgs, RunOptions, SetTagsArgs, WriteOptions};
+use clap::error::ErrorKind;
+
+use crate::cli::{ClearTagsArgs, InputArgs, RunOptions, SetTagsArgs, WriteOptions, usage_error};
 use crate::input;
 use crate::outcome::{Change, Plan, Report};
 use crate::runner::{self, Order};
@@ -57,6 +59,7 @@ fn plan_changes<'a>(fields: impl Iterator<Item = &'a TagField>, before: Tag, aft
 
 /// Runs `idk set tags` over every input file and returns the process exit code.
 pub async fn run_set(args: SetTagsArgs) -> ExitCode {
+    reject_duplicates(args.fields.iter().map(|(field, _)| field));
     let assignments = Arc::new(args.fields);
     run_plans(args.input, &args.run, &args.write, move |path| {
         plan_set(path, &assignments)
@@ -66,11 +69,26 @@ pub async fn run_set(args: SetTagsArgs) -> ExitCode {
 
 /// Runs `idk clear tags` over every input file and returns the process exit code.
 pub async fn run_clear(args: ClearTagsArgs) -> ExitCode {
+    reject_duplicates(args.fields.iter());
     let fields = Arc::new(args.fields);
     run_plans(args.input, &args.run, &args.write, move |path| {
         plan_clear(path, &fields)
     })
     .await
+}
+
+/// Exits with a usage error when any `--field` is named twice (aliases included).
+fn reject_duplicates<'a>(fields: impl Iterator<Item = &'a TagField>) {
+    let mut seen = Vec::new();
+    for field in fields {
+        if seen.contains(&field) {
+            usage_error(
+                ErrorKind::ArgumentConflict,
+                format!("--field {field} given more than once"),
+            );
+        }
+        seen.push(field);
+    }
 }
 
 /// Plans and applies an edit on every file concurrently, then prints the summary.

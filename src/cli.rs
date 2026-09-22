@@ -202,6 +202,16 @@ pub enum MergeTarget {
     Artists(MergeArgs),
 }
 
+impl MergeTarget {
+    /// The field merged, its `tags.merge` config key, and the arguments.
+    pub fn into_parts(self) -> (TagField, &'static str, MergeArgs) {
+        match self {
+            MergeTarget::Genres(args) => (TagField::Genre, "genres", args),
+            MergeTarget::Artists(args) => (TagField::Artist, "artists", args),
+        }
+    }
+}
+
 /// Arguments for `idk merge genres` and `idk merge artists`.
 #[derive(Args)]
 pub struct MergeArgs {
@@ -220,6 +230,7 @@ pub struct MergeArgs {
     #[arg(
         long,
         value_name = "VALUE",
+        value_parser = non_blank,
         required_unless_present = "config",
         conflicts_with = "config"
     )]
@@ -347,6 +358,21 @@ pub struct InputArgs {
     /// Also read inputs from a file, one per line (or NUL-separated); "-" reads stdin.
     #[arg(long, value_name = "PATH")]
     pub files_from: Option<PathBuf>,
+}
+
+/// Rejects empty or whitespace-only values.
+fn non_blank(value: &str) -> Result<String, String> {
+    if value.trim().is_empty() {
+        Err("must not be empty".to_owned())
+    } else {
+        Ok(value.to_owned())
+    }
+}
+
+/// Exits with clap's usage-error formatting and exit code 2.
+pub fn usage_error(kind: clap::error::ErrorKind, message: impl std::fmt::Display) -> ! {
+    use clap::CommandFactory;
+    Cli::command().error(kind, message).exit()
 }
 
 /// Execution options shared by file-processing operations.

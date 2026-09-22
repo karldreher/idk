@@ -7,7 +7,8 @@ use std::sync::Arc;
 
 use id3::{Tag, TagLike, Version};
 
-use crate::cli::MergeArgs;
+use crate::cli::{MergeArgs, MergeTarget};
+use crate::config::{Config, ConfigError};
 use crate::input;
 use crate::outcome::{Change, Plan, Report};
 use crate::runner::{self, Order};
@@ -70,8 +71,29 @@ pub fn plan_merge(path: &Path, field: &TagField, rule: &Rule) -> id3::Result<Pla
     }
 }
 
-/// Runs `idk merge` for `field` over every input file and returns the process exit code.
-pub async fn run(args: MergeArgs, field: TagField, rule: Rule) -> ExitCode {
+/// The merge rule: `--from`/`--to`, or `tags.merge.<key>` in `--config`.
+async fn rule(args: &MergeArgs, key: &str) -> Result<Rule, ConfigError> {
+    let Some(path) = &args.config else {
+        let to = args
+            .to
+            .as_deref()
+            .expect("clap requires --to without --config");
+        return Ok(Rule::new(&args.from, to));
+    };
+    let config = Config::load(path).await?;
+    let spec = config
+        .merge(key)
+        .map_err(|message| ConfigError::new(path, message))?;
+    Ok(Rule::new(&spec.from, &spec.to))
+}
+
+/// Runs `idk merge genres|artists` over every input file and returns the process exit code.
+pub async fn run(target: MergeTarget) -> ExitCode {
+    let (field, key, args) = target.into_parts();
+    let rule = match rule(&args, key).await {
+        Ok(rule) => rule,
+        Err(err) => return err.report(),
+    };
     let dry_run = args.write.dry_run;
     let mut report = Report::new(dry_run);
     let rule = Arc::new(rule);
