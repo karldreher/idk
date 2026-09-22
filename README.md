@@ -11,6 +11,16 @@ cargo install --path .
 
 ## Usage
 
+### Input files
+
+Every command that takes `FILES` accepts:
+
+- **Paths** to MP3 files. A path that exists is always used literally, so names like `Song [Live].mp3` are safe.
+- **Glob patterns** (`*`, `?`, `[...]`, `**`), expanded by idk itself so they work the same in Windows `cmd`/PowerShell as in Unix shells. Quote them to let idk expand them: `idk show "**/*.mp3"`. A pattern that matches nothing is an error.
+- **Directories** with `-r/--recursive`, walked for `.mp3` files (any case), sorted by name. Without `-r`, a directory is an error.
+
+Results are de-duplicated, so overlapping inputs process each file once. Input errors are reported and count as failures (exit `1`); the remaining files are still processed.
+
 ### Copy one tag into another
 
 ```bash
