@@ -92,6 +92,7 @@ pub async fn run(args: CopyTagsArgs) -> ExitCode {
 mod tests {
     use super::*;
     use crate::outcome::{Change, Outcome};
+    use crate::test_support::{AUDIO, write_mp3};
 
     fn copy_tag(
         path: &Path,
@@ -103,21 +104,10 @@ mod tests {
     }
     use id3::frame::{Comment, ExtendedText};
     use id3::{Frame, TagLike, Version};
-    use std::path::PathBuf;
+
     use tempfile::TempDir;
 
     /// Bytes standing in for MPEG audio; only their preservation matters.
-    const AUDIO: &[u8] = &[0xFF, 0xFB, 0x90, 0x64, 0x00, 0x11, 0x22, 0x33];
-
-    fn write_mp3(dir: &TempDir, tag: Option<&Tag>, version: Version) -> PathBuf {
-        let path = dir.path().join("song.mp3");
-        std::fs::write(&path, AUDIO).unwrap();
-        if let Some(tag) = tag {
-            tag.write_to_path(&path, version).unwrap();
-        }
-        path
-    }
-
     fn rich_tag() -> Tag {
         let mut tag = Tag::new();
         tag.set_artist("Lead Artist");

@@ -1,14 +1,12 @@
 //! End-to-end tests for `idk schema write` and `idk schema validate`.
 
-use assert_cmd::Command;
 use predicates::prelude::*;
 use predicates::str::contains;
 use serde_json::Value;
 use tempfile::TempDir;
 
-fn idk() -> Command {
-    Command::cargo_bin("idk").unwrap()
-}
+mod common;
+use common::idk;
 
 const VALID: &str = r#"# yaml-language-server: $schema=./idk.yaml.json
 tags:

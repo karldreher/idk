@@ -2,25 +2,20 @@
 
 use std::path::PathBuf;
 
-use assert_cmd::Command;
 use id3::{Tag, TagLike, Version};
 use predicates::prelude::*;
 use predicates::str::contains;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-fn mp3(dir: &TempDir, name: &str, artist: &str) -> PathBuf {
-    let path = dir.path().join(name);
-    std::fs::write(&path, [0xFF, 0xFB, 0x90, 0x64, 0x00]).unwrap();
-    let mut tag = Tag::new();
-    tag.set_artist(artist);
-    tag.set_title(name);
-    tag.write_to_path(&path, Version::Id3v24).unwrap();
-    path
-}
+mod common;
+use common::idk;
 
-fn idk() -> Command {
-    Command::cargo_bin("idk").unwrap()
+fn mp3(dir: &TempDir, name: &str, artist: &str) -> PathBuf {
+    common::mp3(dir.path(), name, |tag| {
+        tag.set_artist(artist);
+        tag.set_title(name);
+    })
 }
 
 #[test]

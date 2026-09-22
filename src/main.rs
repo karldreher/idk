@@ -11,6 +11,8 @@ mod runner;
 mod schema;
 mod show;
 mod tag_field;
+#[cfg(test)]
+mod test_support;
 
 use std::process::ExitCode;
 
