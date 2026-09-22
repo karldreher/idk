@@ -445,6 +445,7 @@ dependencies = [
  "indicatif",
  "jsonschema",
  "predicates",
+ "regex",
  "schemars",
  "serde",
  "serde_json",

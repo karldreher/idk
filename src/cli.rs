@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use clap::{ArgAction, Args, Parser, Subcommand};
 
+use crate::find::{Condition, ConditionParser};
 use crate::tag_field::{AssignmentParser, TagField, TagFieldParser};
 
 /// Config file used when `--config` is given without a path.
@@ -31,6 +32,8 @@ pub enum Command {
         #[command(subcommand)]
         target: CopyTarget,
     },
+    /// Print the files whose tags match every condition.
+    Find(FindArgs),
     /// Merge variant values of a field into one value.
     Merge {
         /// Which field to merge.
@@ -74,6 +77,41 @@ pub enum SchemaAction {
         #[arg(long, value_name = "FILE", default_value = DEFAULT_CONFIG)]
         config: PathBuf,
     },
+}
+
+/// Arguments for `idk find`.
+#[derive(Args)]
+pub struct FindArgs {
+    /// Condition (repeatable): FIELD=VALUE, FIELD!=VALUE or FIELD~REGEX.
+    ///
+    /// A missing field compares as "". A VALUE of @FIELD compares against another
+    /// field, e.g. albumartist!=@artist. All conditions must match.
+    #[arg(long = "where", value_name = "COND", value_parser = ConditionParser)]
+    pub conditions: Vec<Condition>,
+
+    /// Match files where this field is absent or empty (repeatable).
+    #[arg(long, value_name = "FIELD", value_parser = TagFieldParser)]
+    pub missing: Vec<TagField>,
+
+    /// Match files where this field has a value (repeatable).
+    #[arg(long, value_name = "FIELD", value_parser = TagFieldParser)]
+    pub present: Vec<TagField>,
+
+    /// Compare values and regexes case-insensitively.
+    #[arg(short, long)]
+    pub ignore_case: bool,
+
+    /// Separate printed paths with NUL instead of newlines (for xargs -0 or --files-from).
+    #[arg(short = '0', long)]
+    pub null: bool,
+
+    /// Input files.
+    #[command(flatten)]
+    pub input: InputArgs,
+
+    /// Execution options.
+    #[command(flatten)]
+    pub run: RunOptions,
 }
 
 /// Things `idk clear` can clear.

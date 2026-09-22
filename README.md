@@ -140,6 +140,27 @@ tags:
 
 `schema validate` exits `0` for a valid file and `1` otherwise, listing every violation.
 
+### Find files by tag
+
+```bash
+idk find -r ~/Music --missing albumartist
+idk find -r ~/Music --where albumartist!=@artist --where genre~^metal -i
+idk find -r ~/Music --missing genre -0 | idk set tags --field genre=Unknown --files-from -
+```
+
+Prints the path of every file matching **all** conditions, in input order:
+
+| Condition                 | Matches when                                    |
+|---------------------------|-------------------------------------------------|
+| `--where FIELD=VALUE`     | the field equals VALUE (a missing field is `""`) |
+| `--where FIELD!=VALUE`    | the field differs from VALUE                    |
+| `--where FIELD~REGEX`     | the field matches the regex                     |
+| `--where FIELD=@OTHER`    | the field equals another field (`!=@` to differ) |
+| `--missing FIELD`         | the field is absent or empty                    |
+| `--present FIELD`         | the field has a value                           |
+
+`-i/--ignore-case` applies to `=`, `!=` and `~`. `-0/--null` separates paths with NUL for `xargs -0` or `--files-from`. Invalid conditions exit `2` before any file is read; unreadable files exit `1`. Finding no matches is still exit `0`.
+
 ### Show tags
 
 ```bash
