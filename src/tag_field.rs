@@ -276,6 +276,8 @@ impl JsonSchema for TagField {
 }
 
 /// A regex matching `literal` in any letter case, e.g. `ab-` → `[aA][bB]-`.
+///
+/// Field names contain only letters, digits, `-` and `:`, none of which need escaping.
 fn case_insensitive(literal: &str) -> String {
     literal
         .chars()
@@ -283,19 +285,10 @@ fn case_insensitive(literal: &str) -> String {
             if c.is_ascii_alphabetic() {
                 format!("[{}{}]", c.to_ascii_lowercase(), c.to_ascii_uppercase())
             } else {
-                regex_escape(c)
+                c.to_string()
             }
         })
         .collect()
-}
-
-/// Escapes a regex metacharacter; field names only contain `-`, `:` and digits besides letters.
-fn regex_escape(c: char) -> String {
-    if r"\.+*?()|[]{}^$".contains(c) {
-        format!("\\{c}")
-    } else {
-        c.to_string()
-    }
 }
 
 /// clap value parser for [`TagField`], listing every field in `--help`.
