@@ -1,7 +1,7 @@
 //! `idk find`: print the files whose tags match every condition.
 
 use std::ffi::OsStr;
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -202,7 +202,7 @@ pub async fn run(args: FindArgs) -> ExitCode {
         args.ignore_case,
     ));
     let separator: &[u8] = if args.null { b"\0" } else { b"\n" };
-    let show_progress = !args.run.quiet && std::io::stdout().is_terminal();
+    let show_progress = args.run.progress_for_stdout();
     let inputs = input::resolve(args.input.clone()).await;
     let mut failed = inputs.failures > 0;
 
@@ -228,11 +228,7 @@ pub async fn run(args: FindArgs) -> ExitCode {
     )
     .await;
 
-    if failed {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    }
+    runner::exit_code(failed)
 }
 
 #[cfg(test)]

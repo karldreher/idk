@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::pin::pin;
+use std::process::ExitCode;
 use std::sync::Arc;
 
 use futures_util::StreamExt;
@@ -55,6 +56,15 @@ pub async fn process<T, Op>(
         progress.inc(1);
     }
     progress.finish_and_clear();
+}
+
+/// Exit code 1 when anything failed, otherwise 0.
+pub fn exit_code(failed: bool) -> ExitCode {
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 /// Builds the overall progress bar on stderr.

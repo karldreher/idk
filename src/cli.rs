@@ -388,6 +388,13 @@ pub struct RunOptions {
 }
 
 impl RunOptions {
+    /// Whether to draw the progress bar for a command whose results go to stdout:
+    /// not with `--quiet`, and not when stdout is piped.
+    pub fn progress_for_stdout(&self) -> bool {
+        use std::io::IsTerminal;
+        !self.quiet && std::io::stdout().is_terminal()
+    }
+
     /// The effective concurrency limit.
     pub fn jobs(&self) -> usize {
         self.jobs

@@ -42,7 +42,7 @@ pub async fn run_writes(
     if !run.quiet {
         println!("{}", report.summary(skipped));
     }
-    report.exit_code()
+    runner::exit_code(report.failed > 0)
 }
 
 /// A field's value before and after a write.
@@ -199,15 +199,6 @@ impl Report {
             self.updated, self.unchanged, self.failed
         )
     }
-
-    /// Non-zero when any file failed.
-    fn exit_code(&self) -> ExitCode {
-        if self.failed > 0 {
-            ExitCode::FAILURE
-        } else {
-            ExitCode::SUCCESS
-        }
-    }
 }
 
 #[cfg(test)]
@@ -227,7 +218,7 @@ mod tests {
             "0 updated, 1 unchanged, 1 skipped (no artist), 1 failed"
         );
         assert_eq!(report.summary(None), "0 updated, 1 unchanged, 1 failed");
-        assert_eq!(report.exit_code(), ExitCode::FAILURE);
+        assert_eq!(report.failed, 1);
     }
 
     #[test]

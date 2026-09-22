@@ -1,6 +1,5 @@
 //! `idk show`: print the tags of each input file.
 
-use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -159,7 +158,7 @@ fn render_json(path: &Path, tags: FileTags) -> Value {
 ///
 /// Files are read concurrently, but output follows input order.
 pub async fn run(args: ShowArgs) -> ExitCode {
-    let show_progress = !args.json && !args.run.quiet && std::io::stdout().is_terminal();
+    let show_progress = !args.json && args.run.progress_for_stdout();
     let fields = args.fields.clone();
     let verbose = args.verbose;
     let mut json_files = Vec::new();
@@ -191,11 +190,7 @@ pub async fn run(args: ShowArgs) -> ExitCode {
         let out = serde_json::to_string_pretty(&json_files).expect("JSON values serialize");
         println!("{out}");
     }
-    if failed {
-        ExitCode::FAILURE
-    } else {
-        ExitCode::SUCCESS
-    }
+    runner::exit_code(failed)
 }
 
 #[cfg(test)]
