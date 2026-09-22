@@ -46,72 +46,52 @@ struct Named {
     field: TagField,
     name: &'static str,
     aliases: &'static [&'static str],
-    help: &'static str,
+    /// The single text frame storing the field; `None` for `date` and `comment`.
+    frame: Option<&'static str>,
+    /// Help text; the frame, when there is one, is appended in parentheses.
+    description: &'static str,
+}
+
+const fn named(
+    field: TagField,
+    name: &'static str,
+    aliases: &'static [&'static str],
+    frame: Option<&'static str>,
+    description: &'static str,
+) -> Named {
+    Named {
+        field,
+        name,
+        aliases,
+        frame,
+        description,
+    }
 }
 
 /// Every fixed-name field, in help order.
+#[rustfmt::skip]
 const NAMED: &[Named] = &[
-    Named {
-        field: TagField::Artist,
-        name: "artist",
-        aliases: &["tpe1"],
-        help: "Lead artist (TPE1)",
-    },
-    Named {
-        field: TagField::AlbumArtist,
-        name: "albumartist",
-        aliases: &["album-artist", "tpe2"],
-        help: "Album artist (TPE2)",
-    },
-    Named {
-        field: TagField::Title,
-        name: "title",
-        aliases: &["tit2"],
-        help: "Track title (TIT2)",
-    },
-    Named {
-        field: TagField::Album,
-        name: "album",
-        aliases: &["talb"],
-        help: "Album title (TALB)",
-    },
-    Named {
-        field: TagField::TrackNumber,
-        name: "tracknumber",
-        aliases: &["track", "trck"],
-        help: "Track number (TRCK)",
-    },
-    Named {
-        field: TagField::DiscNumber,
-        name: "discnumber",
-        aliases: &["disc", "tpos"],
-        help: "Disc number (TPOS)",
-    },
-    Named {
-        field: TagField::Date,
-        name: "date",
-        aliases: &["year", "tdrc", "tyer"],
-        help: "Recording date (TDRC on v2.4, TYER on v2.3)",
-    },
-    Named {
-        field: TagField::Genre,
-        name: "genre",
-        aliases: &["tcon"],
-        help: "Genre (TCON)",
-    },
-    Named {
-        field: TagField::Composer,
-        name: "composer",
-        aliases: &["tcom"],
-        help: "Composer (TCOM)",
-    },
-    Named {
-        field: TagField::Comment,
-        name: "comment",
-        aliases: &["comm"],
-        help: "Comment (COMM)",
-    },
+    named(TagField::Artist, "artist", &["tpe1"], Some("TPE1"), "Lead artist"),
+    named(TagField::AlbumArtist, "albumartist", &["album-artist", "tpe2"], Some("TPE2"), "Album artist"),
+    named(TagField::Title, "title", &["tit2"], Some("TIT2"), "Track title"),
+    named(TagField::Album, "album", &["talb"], Some("TALB"), "Album title"),
+    named(TagField::TrackNumber, "tracknumber", &["track", "trck"], Some("TRCK"), "Track number"),
+    named(TagField::DiscNumber, "discnumber", &["disc", "tpos"], Some("TPOS"), "Disc number"),
+    named(TagField::Date, "date", &["year", "tdrc", "tyer"], None, "Recording date (TDRC on v2.4, TYER on v2.3)"),
+    named(TagField::Genre, "genre", &["tcon"], Some("TCON"), "Genre"),
+    named(TagField::Composer, "composer", &["tcom"], Some("TCOM"), "Composer"),
+    named(TagField::Comment, "comment", &["comm"], None, "Comment (COMM)"),
 ];
+
+impl Named {
+    /// Help text for `--help`, e.g. `Lead artist (TPE1)`.
+    fn help(&self) -> String {
+        match self.frame {
+            Some(frame) => format!("{} ({frame})", self.description),
+            None => self.description.to_owned(),
+        }
+    }
+}
 
 /// Prefix for user-defined text fields, e.g. `txxx:MusicBrainz Album Id`.
 const TXXX_PREFIX: &str = "txxx:";
@@ -119,17 +99,7 @@ const TXXX_PREFIX: &str = "txxx:";
 impl TagField {
     /// The plain text frame backing this field, for fields stored in exactly one text frame.
     fn text_frame(&self) -> Option<&'static str> {
-        match self {
-            TagField::Artist => Some("TPE1"),
-            TagField::AlbumArtist => Some("TPE2"),
-            TagField::Title => Some("TIT2"),
-            TagField::Album => Some("TALB"),
-            TagField::TrackNumber => Some("TRCK"),
-            TagField::DiscNumber => Some("TPOS"),
-            TagField::Genre => Some("TCON"),
-            TagField::Composer => Some("TCOM"),
-            TagField::Date | TagField::Comment | TagField::Txxx(_) => None,
-        }
+        NAMED.iter().find(|named| named.field == *self)?.frame
     }
 
     /// The field a frame belongs to, if idk has a name for it.
@@ -147,7 +117,7 @@ impl TagField {
                 .map(|extended| TagField::Txxx(extended.description.clone())),
             id => NAMED
                 .iter()
-                .find(|named| named.field.text_frame() == Some(id))
+                .find(|named| named.frame == Some(id))
                 .map(|named| named.field.clone()),
         }
     }
@@ -388,7 +358,7 @@ fn possible_values() -> impl Iterator<Item = PossibleValue> {
         .map(|named| {
             PossibleValue::new(named.name)
                 .aliases(named.aliases.iter().copied())
-                .help(named.help)
+                .help(named.help())
         })
         .chain([PossibleValue::new("txxx:<description>")
             .help("User-defined text frame with the given description (TXXX)")])
