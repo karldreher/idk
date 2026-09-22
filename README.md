@@ -3,10 +3,11 @@ The ID3 Knife, CLI Tool for MP3 metadata edits
 
 ## Install
 
-Download the archive for your platform from [Releases](https://github.com/karldreher/idk/releases), or build from source:
+Download the archive for your platform from [Releases](https://github.com/karldreher/idk/releases), or build from source into `~/.local` (make sure `~/.local/bin` is on your `PATH`):
 
 ```bash
-cargo install --path .
+# Installs the idk binary to ~/.local/bin
+cargo install --path . --root ~/.local
 ```
 
 ## Usage
