@@ -11,17 +11,31 @@ use crate::tag_field::TagField;
 /// A field's value before and after a write.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Change {
+    /// The field that changed.
+    pub field: TagField,
     /// The field's previous value, if it had one.
     pub old: Option<String>,
-    /// The value written to the field.
-    pub new: String,
+    /// The field's new value, or `None` when it was removed.
+    pub new: Option<String>,
+}
+
+impl Change {
+    /// Compares `field` in `before` and `after`, returning the change if its value differs.
+    pub fn between(field: &TagField, before: &Tag, after: &Tag) -> Option<Change> {
+        let (old, new) = (field.read(before), field.read(after));
+        (old != new).then(|| Change {
+            field: field.clone(),
+            old,
+            new,
+        })
+    }
 }
 
 /// What happened to a single file.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
-    /// The field was written.
-    Updated(Change),
+    /// The file was written; one entry per changed field.
+    Updated(Vec<Change>),
     /// The field already held the target value; the file was not written.
     Unchanged,
     /// The operation did not apply to this file; the file was not written.
@@ -34,8 +48,8 @@ pub enum Plan {
     Write {
         /// The updated tag.
         tag: Tag,
-        /// The field's change.
-        change: Change,
+        /// Every changed field; never empty.
+        changes: Vec<Change>,
     },
     /// The field already holds the target value.
     Unchanged,
@@ -49,11 +63,11 @@ impl Plan {
     /// With `dry_run`, nothing is written but the outcome is the same.
     pub fn apply(self, path: &Path, dry_run: bool) -> id3::Result<Outcome> {
         match self {
-            Plan::Write { tag, change } => {
+            Plan::Write { tag, changes } => {
                 if !dry_run {
                     tag.write_to_path(path, tag.version())?;
                 }
-                Ok(Outcome::Updated(change))
+                Ok(Outcome::Updated(changes))
             }
             Plan::Unchanged => Ok(Outcome::Unchanged),
             Plan::Skipped => Ok(Outcome::Skipped),
@@ -63,7 +77,6 @@ impl Plan {
 
 /// Per-run tallies used for dry-run output, the final summary and the exit code.
 pub struct Report {
-    field: TagField,
     dry_run: bool,
     updated: usize,
     unchanged: usize,
@@ -72,10 +85,9 @@ pub struct Report {
 }
 
 impl Report {
-    /// A report for a run that writes `field`.
-    pub fn new(field: TagField, dry_run: bool) -> Self {
+    /// A report for a run; `dry_run` prints changes instead of writing them.
+    pub fn new(dry_run: bool) -> Self {
         Report {
-            field,
             dry_run,
             updated: 0,
             unchanged: 0,
@@ -89,19 +101,24 @@ impl Report {
     /// In a dry run, each pending change is printed to stdout.
     pub fn record(&mut self, path: &Path, result: Result<Outcome, String>, progress: &ProgressBar) {
         match result {
-            Ok(Outcome::Updated(change)) => {
+            Ok(Outcome::Updated(changes)) => {
                 self.updated += 1;
                 if self.dry_run {
-                    let old = change
-                        .old
-                        .map_or("(none)".to_owned(), |old| format!("{old:?}"));
+                    let describe = |value: &Option<String>| {
+                        value
+                            .as_ref()
+                            .map_or("(none)".to_owned(), |value| format!("{value:?}"))
+                    };
                     progress.suspend(|| {
-                        println!(
-                            "{}: {} {old} -> {:?}",
-                            path.display(),
-                            self.field,
-                            change.new
-                        )
+                        for change in &changes {
+                            println!(
+                                "{}: {} {} -> {}",
+                                path.display(),
+                                change.field,
+                                describe(&change.old),
+                                describe(&change.new)
+                            );
+                        }
                     });
                 }
             }
@@ -146,7 +163,7 @@ mod tests {
 
     #[test]
     fn summarizes_counts_with_optional_skip_label() {
-        let mut report = Report::new(TagField::Genre, false);
+        let mut report = Report::new(false);
         let progress = ProgressBar::hidden();
         report.record(Path::new("a"), Ok(Outcome::Unchanged), &progress);
         report.record(Path::new("b"), Ok(Outcome::Skipped), &progress);
@@ -162,7 +179,7 @@ mod tests {
 
     #[test]
     fn dry_run_summary_says_would_be_updated() {
-        let report = Report::new(TagField::Genre, true);
+        let report = Report::new(true);
         assert_eq!(
             report.summary(None),
             "0 would be updated, 0 unchanged, 0 failed"

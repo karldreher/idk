@@ -20,17 +20,15 @@ pub fn plan_copy(path: &Path, from: &TagField, to: &TagField) -> id3::Result<Pla
     let Some(value) = from.read(&tag).filter(|value| !value.is_empty()) else {
         return Ok(Plan::Skipped);
     };
-    let old = to.read(&tag);
+    let before = tag.clone();
     to.write(&mut tag, &value);
-    let new = to.read(&tag);
-    if new == old {
-        return Ok(Plan::Unchanged);
+    match Change::between(to, &before, &tag) {
+        Some(change) => Ok(Plan::Write {
+            tag,
+            changes: vec![change],
+        }),
+        None => Ok(Plan::Unchanged),
     }
-    let change = Change {
-        old,
-        new: new.unwrap_or_default(),
-    };
-    Ok(Plan::Write { tag, change })
 }
 
 /// Copies the value of `from` into `to` in the file at `path`.
@@ -54,7 +52,7 @@ pub async fn run(args: CopyTagsArgs, from: TagField, to: TagField) -> ExitCode {
     let summary_label = format!("no {from}");
     let dry_run = args.write.dry_run;
     let fail_on_empty = args.fail_on_empty;
-    let mut report = Report::new(to.clone(), dry_run);
+    let mut report = Report::new(dry_run);
     runner::process(
         args.files.clone(),
         args.run.jobs(),
@@ -127,10 +125,11 @@ mod tests {
         let after = Tag::read_from_path(&path).unwrap();
         assert_eq!(
             outcome,
-            Outcome::Updated(Change {
+            Outcome::Updated(vec![Change {
+                field: TagField::AlbumArtist,
                 old: Some("Old Album Artist".into()),
-                new: "Lead Artist".into(),
-            })
+                new: Some("Lead Artist".into()),
+            }])
         );
         assert_eq!(after.album_artist(), Some("Lead Artist"));
         assert_eq!(
@@ -218,10 +217,11 @@ mod tests {
 
         assert_eq!(
             outcome,
-            Outcome::Updated(Change {
+            Outcome::Updated(vec![Change {
+                field: TagField::AlbumArtist,
                 old: Some("Old Album Artist".into()),
-                new: "Lead Artist".into(),
-            })
+                new: Some("Lead Artist".into()),
+            }])
         );
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }

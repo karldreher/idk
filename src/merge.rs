@@ -58,23 +58,21 @@ pub fn plan_merge(path: &Path, field: &TagField, rule: &Rule) -> id3::Result<Pla
         return Ok(Plan::Unchanged);
     }
     let mut tag = tag.unwrap_or_else(|| Tag::with_version(Version::Id3v24));
-    let old = field.read(&tag);
+    let before = tag.clone();
     field.write(&mut tag, &rule.to);
-    let new = field.read(&tag);
-    if new == old {
-        return Ok(Plan::Unchanged);
+    match Change::between(field, &before, &tag) {
+        Some(change) => Ok(Plan::Write {
+            tag,
+            changes: vec![change],
+        }),
+        None => Ok(Plan::Unchanged),
     }
-    let change = Change {
-        old,
-        new: new.unwrap_or_default(),
-    };
-    Ok(Plan::Write { tag, change })
 }
 
 /// Runs `idk merge` for `field` over every input file and returns the process exit code.
 pub async fn run(args: MergeArgs, field: TagField, rule: Rule) -> ExitCode {
     let dry_run = args.write.dry_run;
-    let mut report = Report::new(field.clone(), dry_run);
+    let mut report = Report::new(dry_run);
     let rule = Arc::new(rule);
     let task_field = field.clone();
     runner::process(
@@ -164,10 +162,11 @@ mod tests {
 
         assert_eq!(
             outcome,
-            Outcome::Updated(Change {
+            Outcome::Updated(vec![Change {
+                field: TagField::Genre,
                 old: Some("Heavy Metal".into()),
-                new: "Rock".into()
-            })
+                new: Some("Rock".into()),
+            }])
         );
         let after = Tag::read_from_path(&path).unwrap();
         assert_eq!(after.genre(), Some("Rock"));
