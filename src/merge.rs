@@ -3,15 +3,13 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::ExitCode;
-use std::sync::Arc;
 
 use id3::{Tag, TagLike, Version};
 
 use crate::cli::{MergeArgs, MergeTarget};
 use crate::config::{Config, ConfigError};
 use crate::input;
-use crate::outcome::{Plan, Report};
-use crate::runner::{self, Order};
+use crate::outcome::{Plan, run_writes};
 use crate::tag_field::TagField;
 
 /// A merge rule with its `from` values normalized for matching.
@@ -88,30 +86,11 @@ pub async fn run(target: MergeTarget) -> ExitCode {
         Ok(rule) => rule,
         Err(err) => return err.report(),
     };
-    let dry_run = args.write.dry_run;
-    let mut report = Report::new(dry_run);
-    let rule = Arc::new(rule);
-    let task_field = field.clone();
-    let inputs = input::resolve(args.input.clone()).await;
-    report.add_failures(inputs.failures);
-    runner::process(
-        inputs.files,
-        args.run.jobs(),
-        Order::Completion,
-        !args.run.quiet,
-        move |path| {
-            plan_merge(path, &task_field, &rule)
-                .and_then(|plan| plan.apply(path, dry_run))
-                .map_err(|err| err.to_string())
-        },
-        |progress, path, result| report.record(&path, result, progress),
-    )
-    .await;
-
-    if !args.run.quiet {
-        println!("{}", report.summary(None));
-    }
-    report.exit_code()
+    let inputs = input::resolve(args.input).await;
+    run_writes(inputs, &args.run, &args.write, None, move |path| {
+        plan_merge(path, &field, &rule).map_err(|err| err.to_string())
+    })
+    .await
 }
 
 #[cfg(test)]

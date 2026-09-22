@@ -93,7 +93,7 @@ fn progress_bar(len: u64, show: bool) -> ProgressBar {
 ///
 /// Two concurrent writers on one file would race, so duplicates (for example
 /// `a.mp3` and `./a.mp3`) must be collapsed before dispatch.
-async fn unique_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
+pub async fn unique_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
     tokio::task::spawn_blocking(move || {
         let mut seen = HashSet::new();
         files
