@@ -281,12 +281,16 @@ pub struct WriteOptions {
 #[derive(Args, Clone)]
 pub struct InputArgs {
     /// MP3 files, directories (with -r) or glob patterns such as "*.mp3" or "**/*.mp3".
-    #[arg(required = true, value_name = "FILES")]
+    #[arg(required_unless_present = "files_from", value_name = "FILES")]
     pub files: Vec<PathBuf>,
 
     /// Walk directories recursively, including every .mp3 file.
     #[arg(short, long)]
     pub recursive: bool,
+
+    /// Also read inputs from a file, one per line (or NUL-separated); "-" reads stdin.
+    #[arg(long, value_name = "PATH")]
+    pub files_from: Option<PathBuf>,
 }
 
 /// Execution options shared by file-processing operations.

@@ -3,7 +3,9 @@
 //! Each argument is taken literally when that path exists. Otherwise, if it
 //! contains `*`, `?` or `[`, idk expands it as a glob itself, so patterns work
 //! the same on Windows (whose shells don't expand them) as on Unix.
+//! `--files-from` entries follow the same rules, after the positional inputs.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
@@ -41,7 +43,35 @@ fn resolve_all(args: &InputArgs) -> (Vec<PathBuf>, Vec<String>) {
     for arg in &args.files {
         expand(arg, args.recursive, &mut files, &mut errors);
     }
+    if let Some(list) = &args.files_from {
+        match read_list(list) {
+            Ok(entries) => {
+                for entry in entries {
+                    expand(Path::new(&entry), args.recursive, &mut files, &mut errors);
+                }
+            }
+            Err(err) => errors.push(format!("{}: {err}", list.display())),
+        }
+    }
     (files, errors)
+}
+
+/// Reads a file list (`-` for stdin): NUL-separated when it contains NUL, otherwise
+/// one entry per line. Blank entries are skipped; other whitespace is kept.
+fn read_list(path: &Path) -> std::io::Result<Vec<String>> {
+    let mut text = String::new();
+    if path == Path::new("-") {
+        std::io::stdin().read_to_string(&mut text)?;
+    } else {
+        text = std::fs::read_to_string(path)?;
+    }
+    let separator = if text.contains('\0') { '\0' } else { '\n' };
+    Ok(text
+        .split(separator)
+        .map(|entry| entry.strip_suffix('\r').unwrap_or(entry))
+        .filter(|entry| !entry.trim().is_empty())
+        .map(str::to_owned)
+        .collect())
 }
 
 /// Expands one argument: a directory, an existing or missing literal path, or a glob.
@@ -126,7 +156,11 @@ mod tests {
     }
 
     fn resolve(files: Vec<PathBuf>, recursive: bool) -> (Vec<PathBuf>, Vec<String>) {
-        resolve_all(&InputArgs { files, recursive })
+        resolve_all(&InputArgs {
+            files,
+            recursive,
+            files_from: None,
+        })
     }
 
     #[test]
@@ -204,6 +238,61 @@ mod tests {
 
         assert_eq!(files, [a, b, top]);
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn files_from_follows_positional_inputs_with_the_same_rules() {
+        let dir = TempDir::new().unwrap();
+        let a = touch(&dir, "a.mp3");
+        let b = touch(&dir, "My Album/b.mp3");
+        let c = touch(&dir, "c.mp3");
+        let list = dir.path().join("list.txt");
+        let lines = format!(
+            "{}\r\n\n   \n{}\n",
+            b.display(),
+            dir.path().join("c*.mp3").display()
+        );
+        std::fs::write(&list, lines).unwrap();
+
+        let (files, errors) = resolve_all(&InputArgs {
+            files: vec![a.clone()],
+            recursive: false,
+            files_from: Some(list),
+        });
+
+        assert_eq!(files, [a, b, c]);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn files_from_accepts_nul_separated_lists() {
+        let dir = TempDir::new().unwrap();
+        let odd = touch(&dir, "line\nbreak.mp3");
+        let list = dir.path().join("list");
+        std::fs::write(&list, format!("{}\0", odd.display())).unwrap();
+
+        let (files, _) = resolve_all(&InputArgs {
+            files: vec![],
+            recursive: false,
+            files_from: Some(list),
+        });
+
+        assert_eq!(files, [odd]);
+    }
+
+    #[test]
+    fn unreadable_list_is_an_error() {
+        let dir = TempDir::new().unwrap();
+        let list = dir.path().join("missing.txt");
+
+        let (_, errors) = resolve_all(&InputArgs {
+            files: vec![],
+            recursive: false,
+            files_from: Some(list.clone()),
+        });
+
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].starts_with(&list.display().to_string()));
     }
 
     #[test]

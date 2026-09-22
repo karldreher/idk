@@ -124,3 +124,30 @@ fn inputs_are_deduplicated_across_sources() {
         .success()
         .stdout(contains("1 updated, 0 unchanged, 0 failed"));
 }
+
+#[test]
+fn reads_inputs_from_stdin() {
+    let dir = TempDir::new().unwrap();
+    let a = mp3(dir.path(), "a.mp3", "A");
+    let b = mp3(dir.path(), "b b.mp3", "B");
+
+    idk()
+        .args(["set", "tags", "--field", "genre=Rock", "--files-from", "-"])
+        .write_stdin(format!("{}\n{}\n", a.display(), b.display()))
+        .assert()
+        .success()
+        .stdout(contains("2 updated"));
+
+    for file in [a, b] {
+        assert_eq!(Tag::read_from_path(file).unwrap().genre(), Some("Rock"));
+    }
+}
+
+#[test]
+fn needs_files_or_files_from() {
+    idk()
+        .args(["show"])
+        .assert()
+        .code(2)
+        .stderr(contains("<FILES>"));
+}
