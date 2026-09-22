@@ -5,8 +5,7 @@ use std::path::PathBuf;
 
 use clap::{ArgAction, Args, Parser, Subcommand};
 
-use crate::find::{Condition, ConditionParser};
-use crate::tag_field::{AssignmentParser, TagField, TagFieldParser};
+use crate::tag_field::{TagField, TagFieldParser, parse_assignment};
 
 /// Config file used when `--config` is given without a path.
 pub const DEFAULT_CONFIG: &str = "idk.yaml";
@@ -104,8 +103,8 @@ pub struct FindArgs {
     ///
     /// A missing field compares as "". A VALUE of @FIELD compares against another
     /// field, e.g. albumartist!=@artist. All conditions must match.
-    #[arg(long = "where", value_name = "COND", value_parser = ConditionParser)]
-    pub conditions: Vec<Condition>,
+    #[arg(long = "where", value_name = "COND")]
+    pub conditions: Vec<String>,
 
     /// Match files where this field is absent or empty (repeatable).
     #[arg(long, value_name = "FIELD", value_parser = TagFieldParser)]
@@ -175,7 +174,7 @@ pub struct SetTagsArgs {
     #[arg(
         long = "field",
         value_name = "FIELD=VALUE",
-        value_parser = AssignmentParser,
+        value_parser = parse_assignment,
         required = true
     )]
     pub fields: Vec<(TagField, String)>,

@@ -140,7 +140,7 @@ fn set_usage_errors_exit_2() {
             vec!["--field", "genre="],
             "empty value for 'genre'; use `idk clear tags --field genre` to remove it",
         ),
-        (vec!["--field", "genres=Rock"], "invalid value 'genres'"),
+        (vec!["--field", "genres=Rock"], "unknown tag 'genres'"),
         (
             vec!["--field", "genre=Rock", "--field", "TCON=Pop"],
             "--field genre given more than once",

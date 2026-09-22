@@ -153,15 +153,15 @@ fn unreadable_files_fail_but_matches_still_print() {
 fn invalid_conditions_exit_2() {
     let cases = [
         ("genre", "expected FIELD=VALUE, FIELD!=VALUE or FIELD~REGEX"),
-        ("genres=Rock", "invalid value 'genres'"),
+        ("genres=Rock", "unknown tag 'genres'"),
         ("title~(", "bad regex"),
-        ("artist=@nope", "invalid value 'nope'"),
+        ("artist=@nope", "unknown tag 'nope'"),
     ];
     for (condition, message) in cases {
         idk()
             .args(["find", "--where", condition, "x.mp3"])
             .assert()
             .code(2)
-            .stderr(contains(message).and(contains("possible values").or(contains("condition"))));
+            .stderr(contains(format!("invalid condition '{condition}'")).and(contains(message)));
     }
 }

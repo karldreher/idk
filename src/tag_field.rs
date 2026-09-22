@@ -231,18 +231,14 @@ fn year_of(value: &str) -> &str {
 }
 
 impl FromStr for TagField {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if let Some(prefix) = s.get(..TXXX_PREFIX.len())
             && prefix.eq_ignore_ascii_case(TXXX_PREFIX)
+            && s.len() > TXXX_PREFIX.len()
         {
-            let description = &s[TXXX_PREFIX.len()..];
-            return if description.is_empty() {
-                Err(())
-            } else {
-                Ok(TagField::Txxx(description.to_owned()))
-            };
+            return Ok(TagField::Txxx(s[TXXX_PREFIX.len()..].to_owned()));
         }
         NAMED
             .iter()
@@ -254,7 +250,10 @@ impl FromStr for TagField {
                         .any(|alias| alias.eq_ignore_ascii_case(s))
             })
             .map(|named| named.field.clone())
-            .ok_or(())
+            .ok_or_else(|| {
+                let names: Vec<_> = possible_values().map(|v| v.get_name().to_owned()).collect();
+                format!("unknown tag '{s}'; expected one of: {}", names.join(", "))
+            })
     }
 }
 
@@ -274,8 +273,7 @@ impl fmt::Display for TagField {
 impl<'de> Deserialize<'de> for TagField {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let name = String::deserialize(deserializer)?;
-        name.parse()
-            .map_err(|()| serde::de::Error::custom(format!("unknown tag {name:?}")))
+        name.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -344,7 +342,7 @@ impl TypedValueParser for TagFieldParser {
         value: &OsStr,
     ) -> Result<TagField, clap::Error> {
         let raw = value.to_string_lossy();
-        raw.parse().map_err(|()| {
+        raw.parse().map_err(|_| {
             let mut err = clap::Error::new(ErrorKind::InvalidValue).with_cmd(cmd);
             if let Some(arg) = arg {
                 err.insert(
@@ -369,38 +367,18 @@ impl TypedValueParser for TagFieldParser {
     }
 }
 
-/// clap value parser for `FIELD=VALUE`, splitting on the first `=`.
+/// Parses `FIELD=VALUE` for `idk set tags`, splitting on the first `=`.
 ///
 /// The value must not be empty; removing a field is `idk clear tags`.
-#[derive(Clone)]
-pub struct AssignmentParser;
-
-impl TypedValueParser for AssignmentParser {
-    type Value = (TagField, String);
-
-    fn parse_ref(
-        &self,
-        cmd: &clap::Command,
-        arg: Option<&clap::Arg>,
-        value: &OsStr,
-    ) -> Result<(TagField, String), clap::Error> {
-        let raw = value.to_string_lossy();
-        let invalid = |message: String| {
-            clap::Error::raw(ErrorKind::ValueValidation, format!("{message}\n")).with_cmd(cmd)
-        };
-        let Some((name, value)) = raw.split_once('=') else {
-            return Err(invalid(format!(
-                "invalid value '{raw}' for '--field': expected FIELD=VALUE"
-            )));
-        };
-        let field = TagFieldParser.parse_ref(cmd, arg, OsStr::new(name))?;
-        if value.is_empty() {
-            return Err(invalid(format!(
-                "empty value for '{field}'; use `idk clear tags --field {field}` to remove it"
-            )));
-        }
-        Ok((field, value.to_owned()))
+pub fn parse_assignment(raw: &str) -> Result<(TagField, String), String> {
+    let (name, value) = raw.split_once('=').ok_or("expected FIELD=VALUE")?;
+    let field: TagField = name.parse()?;
+    if value.is_empty() {
+        return Err(format!(
+            "empty value for '{field}'; use `idk clear tags --field {field}` to remove it"
+        ));
     }
+    Ok((field, value.to_owned()))
 }
 
 /// Every accepted field for help and error output.
@@ -420,7 +398,7 @@ fn possible_values() -> impl Iterator<Item = PossibleValue> {
 mod tests {
     use super::*;
 
-    fn parse(s: &str) -> Result<TagField, ()> {
+    fn parse(s: &str) -> Result<TagField, String> {
         s.parse()
     }
 
@@ -440,13 +418,17 @@ mod tests {
             parse("TXXX:MusicBrainz Album Id"),
             Ok(TagField::Txxx("MusicBrainz Album Id".into()))
         );
-        assert_eq!(parse("txxx:"), Err(()));
+        assert!(parse("txxx:").is_err());
     }
 
     #[test]
     fn rejects_unknown_names() {
-        assert_eq!(parse("artists"), Err(()));
-        assert_eq!(parse(""), Err(()));
+        assert!(
+            parse("artists")
+                .unwrap_err()
+                .starts_with("unknown tag 'artists'; expected one of: artist,")
+        );
+        assert!(parse("").is_err());
     }
 
     #[test]
