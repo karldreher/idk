@@ -77,8 +77,7 @@ fn unique_key(entries: &[(String, String)], key: String) -> String {
 /// Human-readable value of a frame. Pictures and private data are summarized, never dumped.
 fn frame_value(frame: &Frame) -> String {
     match frame.content() {
-        // ID3v2.4 separates multiple values with NUL.
-        Content::Text(text) => text.replace('\0', "; "),
+        Content::Text(text) => display_value(text),
         Content::ExtendedText(extended) => extended.value.clone(),
         Content::Comment(comment) => comment.text.clone(),
         Content::Unknown(unknown) if matches!(frame.id(), "APIC" | "PIC") => {
@@ -91,6 +90,13 @@ fn frame_value(frame: &Frame) -> String {
         ),
         content => content.to_string(),
     }
+}
+
+/// How a text value is shown: ID3v2.4 multiple values (NUL-separated) are joined with `; `.
+///
+/// `idk apply` compares against this rendering, so unedited `show --json` output is a no-op.
+pub fn display_value(raw: &str) -> String {
+    raw.replace('\0', "; ")
 }
 
 /// `image/jpeg, 12345 bytes` for a raw (undecoded) picture frame.
