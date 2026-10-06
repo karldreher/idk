@@ -8,7 +8,7 @@ use id3::{Tag, Version};
 
 use crate::cli::{ClearTagsArgs, InputArgs, RunOptions, SetTagsArgs, WriteOptions};
 use crate::input;
-use crate::outcome::{Change, Plan, Report};
+use crate::outcome::{Change, Plan, Report, snapshot};
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
 
@@ -18,12 +18,12 @@ use crate::tag_field::TagField;
 pub fn plan_set(path: &Path, assignments: &[(TagField, String)]) -> id3::Result<Plan> {
     let mut tag = id3::no_tag_ok(Tag::read_from_path(path))?
         .unwrap_or_else(|| Tag::with_version(Version::Id3v24));
-    let before = tag.clone();
+    let fields = || assignments.iter().map(|(field, _)| field);
+    let old = snapshot(fields(), &tag);
     for (field, value) in assignments {
         field.write(&mut tag, value);
     }
-    let fields = assignments.iter().map(|(field, _)| field);
-    Ok(plan_changes(fields, before, tag))
+    Ok(plan_changes(fields(), old, tag))
 }
 
 /// Reads the file at `path` and works out the effect of removing every field in `fields`.
@@ -33,17 +33,22 @@ pub fn plan_clear(path: &Path, fields: &[TagField]) -> id3::Result<Plan> {
     let Some(mut tag) = id3::no_tag_ok(Tag::read_from_path(path))? else {
         return Ok(Plan::Unchanged);
     };
-    let before = tag.clone();
+    let old = snapshot(fields.iter(), &tag);
     for field in fields {
         field.remove(&mut tag);
     }
-    Ok(plan_changes(fields.iter(), before, tag))
+    Ok(plan_changes(fields.iter(), old, tag))
 }
 
-/// A plan writing `after` for every field whose value differs from `before`.
-fn plan_changes<'a>(fields: impl Iterator<Item = &'a TagField>, before: Tag, after: Tag) -> Plan {
+/// A plan writing `after` for every field whose value differs from its `old` value.
+fn plan_changes<'a>(
+    fields: impl Iterator<Item = &'a TagField>,
+    old: Vec<Option<String>>,
+    after: Tag,
+) -> Plan {
     let changes: Vec<Change> = fields
-        .filter_map(|field| Change::between(field, &before, &after))
+        .zip(old)
+        .filter_map(|(field, old)| Change::since(field, old, &after))
         .collect();
     if changes.is_empty() {
         Plan::Unchanged

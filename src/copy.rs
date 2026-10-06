@@ -21,9 +21,9 @@ pub fn plan_copy(path: &Path, from: &TagField, to: &TagField) -> id3::Result<Pla
     let Some(value) = from.read(&tag).filter(|value| !value.is_empty()) else {
         return Ok(Plan::Skipped);
     };
-    let before = tag.clone();
+    let old = to.read(&tag);
     to.write(&mut tag, &value);
-    match Change::between(to, &before, &tag) {
+    match Change::since(to, old, &tag) {
         Some(change) => Ok(Plan::Write {
             tag,
             changes: vec![change],

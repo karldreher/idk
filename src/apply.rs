@@ -14,7 +14,7 @@ use id3::{Tag, Version};
 use serde_json::Value;
 
 use crate::cli::ApplyArgs;
-use crate::outcome::{Change, Plan, Report};
+use crate::outcome::{Change, Plan, Report, snapshot};
 use crate::runner::{self, Order};
 use crate::show::display_value;
 use crate::tag_field::TagField;
@@ -145,7 +145,7 @@ pub fn plan_apply(path: &Path, edits: &[Edit]) -> id3::Result<Plan> {
     else {
         return Ok(Plan::Unchanged);
     };
-    let before = tag.clone();
+    let old = snapshot(edits.iter().map(|(field, _)| field), &tag);
     for (field, value) in edits {
         match value {
             Some(value) => {
@@ -159,7 +159,8 @@ pub fn plan_apply(path: &Path, edits: &[Edit]) -> id3::Result<Plan> {
     }
     let changes: Vec<Change> = edits
         .iter()
-        .filter_map(|(field, _)| Change::between(field, &before, &tag))
+        .zip(old)
+        .filter_map(|((field, _), old)| Change::since(field, old, &tag))
         .collect();
     Ok(if changes.is_empty() {
         Plan::Unchanged

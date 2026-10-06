@@ -20,15 +20,24 @@ pub struct Change {
 }
 
 impl Change {
-    /// Compares `field` in `before` and `after`, returning the change if its value differs.
-    pub fn between(field: &TagField, before: &Tag, after: &Tag) -> Option<Change> {
-        let (old, new) = (field.read(before), field.read(after));
+    /// Compares `old`, the value `field` held before an edit, with its value in `after`.
+    ///
+    /// Returns the change if the value differs.
+    pub fn since(field: &TagField, old: Option<String>, after: &Tag) -> Option<Change> {
+        let new = field.read(after);
         (old != new).then(|| Change {
             field: field.clone(),
             old,
             new,
         })
     }
+}
+
+/// The current values of `fields` in `tag`, to hand to [`Change::since`] after an edit.
+///
+/// Reading values up front avoids cloning the whole tag, which can carry large pictures.
+pub fn snapshot<'a>(fields: impl Iterator<Item = &'a TagField>, tag: &Tag) -> Vec<Option<String>> {
+    fields.map(|field| field.read(tag)).collect()
 }
 
 /// What happened to a single file.
