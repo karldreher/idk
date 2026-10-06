@@ -76,7 +76,8 @@ fn read_list(path: &Path) -> std::io::Result<Vec<String>> {
 
 /// Expands one argument: a directory, an existing or missing literal path, or a glob.
 fn expand(arg: &Path, recursive: bool, files: &mut Vec<PathBuf>, errors: &mut Vec<String>) {
-    if arg.is_dir() {
+    let metadata = std::fs::metadata(arg);
+    if metadata.as_ref().is_ok_and(|metadata| metadata.is_dir()) {
         if recursive {
             walk(arg, files, errors);
         } else {
@@ -85,7 +86,7 @@ fn expand(arg: &Path, recursive: bool, files: &mut Vec<PathBuf>, errors: &mut Ve
         return;
     }
     // Missing literal paths pass through, so the operation reports them per file.
-    if arg.exists() || !is_glob(arg) {
+    if metadata.is_ok() || !is_glob(arg) {
         files.push(arg.to_owned());
         return;
     }
@@ -128,13 +129,20 @@ fn is_glob(path: &Path) -> bool {
 fn walk(dir: &Path, files: &mut Vec<PathBuf>, errors: &mut Vec<String>) {
     for entry in WalkDir::new(dir).follow_links(false).sort_by_file_name() {
         match entry {
-            Ok(entry) if entry.path().is_file() && is_mp3(entry.path()) => {
+            Ok(entry) if is_mp3(entry.path()) && is_file(&entry) => {
                 files.push(entry.into_path());
             }
             Ok(_) => {}
             Err(err) => errors.push(err.to_string()),
         }
     }
+}
+
+/// Whether `entry` is a file, or a symlink to one.
+///
+/// Plain files are recognized from the directory listing, without another `stat`.
+fn is_file(entry: &walkdir::DirEntry) -> bool {
+    entry.file_type().is_file() || (entry.path_is_symlink() && entry.path().is_file())
 }
 
 /// Whether `path` has a `.mp3` extension, in any case.
