@@ -27,12 +27,29 @@ pub async fn process<T, Op>(
     order: Order,
     show_progress: bool,
     op: Op,
-    mut on_result: impl FnMut(&ProgressBar, PathBuf, T),
+    on_result: impl FnMut(&ProgressBar, PathBuf, T),
 ) where
     T: Send + 'static,
     Op: Fn(&Path) -> T + Send + Sync + 'static,
 {
     let files = unique_files(files).await;
+    process_unique(files, jobs, order, show_progress, op, on_result).await;
+}
+
+/// Like [`process`], for callers that already guarantee no two inputs name the same file.
+///
+/// Skips the per-path `canonicalize` that [`process`] uses to collapse duplicates.
+pub async fn process_unique<T, Op>(
+    files: Vec<PathBuf>,
+    jobs: usize,
+    order: Order,
+    show_progress: bool,
+    op: Op,
+    mut on_result: impl FnMut(&ProgressBar, PathBuf, T),
+) where
+    T: Send + 'static,
+    Op: Fn(&Path) -> T + Send + Sync + 'static,
+{
     let progress = progress_bar(files.len() as u64, show_progress);
     let op = Arc::new(op);
     let tasks = stream::iter(files).map(move |path| {

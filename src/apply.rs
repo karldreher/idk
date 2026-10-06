@@ -206,7 +206,8 @@ pub async fn run(args: ApplyArgs) -> ExitCode {
     let by_path: Arc<HashMap<PathBuf, Vec<Edit>>> = Arc::new(edits.entries.into_iter().collect());
     let dry_run = args.write.dry_run;
     let mut report = Report::new(dry_run);
-    runner::process(
+    // `load` already rejected duplicate paths, so the runner need not dedupe again.
+    runner::process_unique(
         files,
         args.run.jobs(),
         Order::Completion,
