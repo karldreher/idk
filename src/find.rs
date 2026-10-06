@@ -1,5 +1,6 @@
 //! `idk find`: print the files whose tags match every condition.
 
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::io::{IsTerminal, Write};
 use std::path::Path;
@@ -135,7 +136,11 @@ impl Matcher {
                 negate,
             } => Test::Compare {
                 field: field.clone(),
-                operand: operand.clone(),
+                // Folded once here; `matches` folds only the file's value.
+                operand: match operand {
+                    Operand::Value(value) if ignore_case => Operand::Value(value.to_lowercase()),
+                    operand => operand.clone(),
+                },
                 negate: *negate,
             },
             Condition::Matches { field, pattern } => Test::Matches {
@@ -163,11 +168,12 @@ impl Matcher {
                 operand,
                 negate,
             } => {
-                let expected = match operand {
-                    Operand::Value(expected) => expected.clone(),
-                    Operand::Field(other) => value(other),
+                let left = value(field);
+                let equal = match operand {
+                    Operand::Value(expected) => self.fold(&left) == expected.as_str(),
+                    Operand::Field(other) => self.fold(&left) == self.fold(&value(other)),
                 };
-                self.equal(&value(field), &expected) != *negate
+                equal != *negate
             }
             Test::Matches { field, regex } => regex.is_match(&value(field)),
             Test::Missing(field) => value(field).trim().is_empty(),
@@ -175,11 +181,12 @@ impl Matcher {
         })
     }
 
-    fn equal(&self, left: &str, right: &str) -> bool {
+    /// `value` as it is compared: lowercased with `--ignore-case`, otherwise untouched.
+    fn fold<'a>(&self, value: &'a str) -> Cow<'a, str> {
         if self.ignore_case {
-            left.to_lowercase() == right.to_lowercase()
+            Cow::Owned(value.to_lowercase())
         } else {
-            left == right
+            Cow::Borrowed(value)
         }
     }
 }

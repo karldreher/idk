@@ -4,7 +4,7 @@
 //! from what `idk show` would print; `null` clears the field. Keys that aren't
 //! field names (frame IDs such as `TENC`, or `date#2`) are skipped with a warning.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -14,7 +14,7 @@ use id3::{Tag, Version};
 use serde_json::Value;
 
 use crate::cli::ApplyArgs;
-use crate::outcome::{Change, Plan, Report};
+use crate::outcome::{Change, Plan, Report, snapshot};
 use crate::runner::{self, Order};
 use crate::show::display_value;
 use crate::tag_field::TagField;
@@ -82,6 +82,7 @@ fn parse_entry(
         }
     };
     let mut edits: Vec<Edit> = Vec::new();
+    let mut seen = HashSet::new();
     match object.get("tags") {
         Some(Value::Object(tags)) => {
             for (key, value) in tags {
@@ -97,7 +98,7 @@ fn parse_entry(
                     skipped.insert(key.clone());
                     continue;
                 };
-                if edits.iter().any(|(existing, _)| *existing == field) {
+                if !seen.insert(field.clone()) {
                     errors.push(format!("{at}.tags.{key}: {field} is given more than once"));
                     continue;
                 }
@@ -144,7 +145,7 @@ pub fn plan_apply(path: &Path, edits: &[Edit]) -> id3::Result<Plan> {
     else {
         return Ok(Plan::Unchanged);
     };
-    let before = tag.clone();
+    let old = snapshot(edits.iter().map(|(field, _)| field), &tag);
     for (field, value) in edits {
         match value {
             Some(value) => {
@@ -158,7 +159,8 @@ pub fn plan_apply(path: &Path, edits: &[Edit]) -> id3::Result<Plan> {
     }
     let changes: Vec<Change> = edits
         .iter()
-        .filter_map(|(field, _)| Change::between(field, &before, &tag))
+        .zip(old)
+        .filter_map(|((field, _), old)| Change::since(field, old, &tag))
         .collect();
     Ok(if changes.is_empty() {
         Plan::Unchanged
@@ -204,7 +206,8 @@ pub async fn run(args: ApplyArgs) -> ExitCode {
     let by_path: Arc<HashMap<PathBuf, Vec<Edit>>> = Arc::new(edits.entries.into_iter().collect());
     let dry_run = args.write.dry_run;
     let mut report = Report::new(dry_run);
-    runner::process(
+    // `load` already rejected duplicate paths, so the runner need not dedupe again.
+    runner::process_unique(
         files,
         args.run.jobs(),
         Order::Completion,

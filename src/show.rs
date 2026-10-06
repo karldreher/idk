@@ -1,5 +1,6 @@
 //! `idk show`: print the tags of each input file.
 
+use std::collections::{HashMap, HashSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -36,6 +37,7 @@ pub fn read_tags(path: &Path, fields: &[TagField], verbose: bool) -> id3::Result
         });
     };
     let mut entries: Vec<(String, String)> = Vec::new();
+    let mut keys = UniqueKeys::default();
     for frame in tag.frames() {
         if !verbose && VERBOSE_ONLY.contains(&frame.id()) {
             continue;
@@ -45,7 +47,7 @@ pub fn read_tags(path: &Path, fields: &[TagField], verbose: bool) -> id3::Result
             continue;
         }
         let key = field.map_or_else(|| frame_key(frame), |field| field.to_string());
-        let key = unique_key(&entries, key);
+        let key = keys.claim(key);
         entries.push((key, frame_value(frame)));
     }
     Ok(FileTags {
@@ -62,16 +64,28 @@ fn frame_key(frame: &Frame) -> String {
     }
 }
 
-/// Appends `#2`, `#3`, ... when `key` is already taken, so JSON keys stay unique.
-fn unique_key(entries: &[(String, String)], key: String) -> String {
-    let taken = |candidate: &str| entries.iter().any(|(existing, _)| existing == candidate);
-    if !taken(&key) {
-        return key;
+/// Hands out unique JSON keys, remembering which are taken and where each suffix left off.
+#[derive(Default)]
+struct UniqueKeys {
+    taken: HashSet<String>,
+    next_suffix: HashMap<String, usize>,
+}
+
+impl UniqueKeys {
+    /// Appends `#2`, `#3`, ... when `key` is already taken, so JSON keys stay unique.
+    fn claim(&mut self, key: String) -> String {
+        if self.taken.insert(key.clone()) {
+            return key;
+        }
+        let suffix = self.next_suffix.entry(key.clone()).or_insert(2);
+        loop {
+            let candidate = format!("{key}#{suffix}");
+            *suffix += 1;
+            if self.taken.insert(candidate.clone()) {
+                return candidate;
+            }
+        }
     }
-    (2..)
-        .map(|n| format!("{key}#{n}"))
-        .find(|candidate| !taken(candidate))
-        .expect("unbounded range")
 }
 
 /// Human-readable value of a frame. Pictures and private data are summarized, never dumped.
@@ -155,6 +169,16 @@ fn render_json(path: &Path, tags: FileTags) -> Value {
     })
 }
 
+/// Prints one element of the top-level JSON array as soon as it is ready.
+///
+/// Together with the closing `]` this matches pretty-printing the whole array,
+/// without holding every file's tags in memory.
+fn print_json_item(item: &Value, first: bool) {
+    let pretty = serde_json::to_string_pretty(item).expect("JSON values serialize");
+    let opening = if first { "[\n" } else { ",\n" };
+    print!("{opening}  {}", pretty.replace('\n', "\n  "));
+}
+
 /// Runs `idk show` over every input file and returns the process exit code.
 ///
 /// Files are read concurrently, but output follows input order.
@@ -162,7 +186,6 @@ pub async fn run(args: ShowArgs) -> ExitCode {
     let show_progress = !args.json && !args.run.quiet && std::io::stdout().is_terminal();
     let fields = args.fields.clone();
     let verbose = args.verbose;
-    let mut json_files = Vec::new();
     let inputs = input::resolve(args.input.clone()).await;
     let mut failed = inputs.failures > 0;
     let mut first = true;
@@ -174,7 +197,9 @@ pub async fn run(args: ShowArgs) -> ExitCode {
         show_progress,
         move |path| read_tags(path, &fields, verbose),
         |progress, path: PathBuf, result| match result {
-            Ok(tags) if args.json => json_files.push(render_json(&path, tags)),
+            Ok(tags) if args.json => {
+                print_json_item(&render_json(&path, tags), std::mem::take(&mut first));
+            }
             Ok(tags) => {
                 let separator = if std::mem::take(&mut first) { "" } else { "\n" };
                 progress.suspend(|| print!("{separator}{}", render_text(&path, &tags)));
@@ -188,8 +213,8 @@ pub async fn run(args: ShowArgs) -> ExitCode {
     .await;
 
     if args.json {
-        let out = serde_json::to_string_pretty(&json_files).expect("JSON values serialize");
-        println!("{out}");
+        // `first` is still set only when no file produced output.
+        println!("{}", if first { "[]" } else { "\n]" });
     }
     if failed {
         ExitCode::FAILURE
@@ -204,6 +229,17 @@ mod tests {
     use id3::TagLike;
     use id3::frame::Comment;
     use tempfile::TempDir;
+
+    #[test]
+    fn repeated_keys_get_numbered_suffixes() {
+        let mut keys = UniqueKeys::default();
+        let claimed: Vec<String> = ["APIC", "APIC", "TIT2", "APIC#2", "APIC"]
+            .into_iter()
+            .map(|key| keys.claim(key.to_owned()))
+            .collect();
+
+        assert_eq!(claimed, ["APIC", "APIC#2", "TIT2", "APIC#2#2", "APIC#3"]);
+    }
 
     fn tagged(dir: &TempDir, build: impl FnOnce(&mut Tag)) -> PathBuf {
         let path = dir.path().join("song.mp3");

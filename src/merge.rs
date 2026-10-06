@@ -59,9 +59,9 @@ pub fn plan_merge(path: &Path, field: &TagField, rule: &Rule) -> id3::Result<Pla
         return Ok(Plan::Unchanged);
     }
     let mut tag = tag.unwrap_or_else(|| Tag::with_version(Version::Id3v24));
-    let before = tag.clone();
+    let old = field.read(&tag);
     field.write(&mut tag, &rule.to);
-    match Change::between(field, &before, &tag) {
+    match Change::since(field, old, &tag) {
         Some(change) => Ok(Plan::Write {
             tag,
             changes: vec![change],
