@@ -1,5 +1,6 @@
 //! `idk show`: print the tags of each input file.
 
+use std::collections::{HashMap, HashSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -36,6 +37,7 @@ pub fn read_tags(path: &Path, fields: &[TagField], verbose: bool) -> id3::Result
         });
     };
     let mut entries: Vec<(String, String)> = Vec::new();
+    let mut keys = UniqueKeys::default();
     for frame in tag.frames() {
         if !verbose && VERBOSE_ONLY.contains(&frame.id()) {
             continue;
@@ -45,7 +47,7 @@ pub fn read_tags(path: &Path, fields: &[TagField], verbose: bool) -> id3::Result
             continue;
         }
         let key = field.map_or_else(|| frame_key(frame), |field| field.to_string());
-        let key = unique_key(&entries, key);
+        let key = keys.claim(key);
         entries.push((key, frame_value(frame)));
     }
     Ok(FileTags {
@@ -62,16 +64,28 @@ fn frame_key(frame: &Frame) -> String {
     }
 }
 
-/// Appends `#2`, `#3`, ... when `key` is already taken, so JSON keys stay unique.
-fn unique_key(entries: &[(String, String)], key: String) -> String {
-    let taken = |candidate: &str| entries.iter().any(|(existing, _)| existing == candidate);
-    if !taken(&key) {
-        return key;
+/// Hands out unique JSON keys, remembering which are taken and where each suffix left off.
+#[derive(Default)]
+struct UniqueKeys {
+    taken: HashSet<String>,
+    next_suffix: HashMap<String, usize>,
+}
+
+impl UniqueKeys {
+    /// Appends `#2`, `#3`, ... when `key` is already taken, so JSON keys stay unique.
+    fn claim(&mut self, key: String) -> String {
+        if self.taken.insert(key.clone()) {
+            return key;
+        }
+        let suffix = self.next_suffix.entry(key.clone()).or_insert(2);
+        loop {
+            let candidate = format!("{key}#{suffix}");
+            *suffix += 1;
+            if self.taken.insert(candidate.clone()) {
+                return candidate;
+            }
+        }
     }
-    (2..)
-        .map(|n| format!("{key}#{n}"))
-        .find(|candidate| !taken(candidate))
-        .expect("unbounded range")
 }
 
 /// Human-readable value of a frame. Pictures and private data are summarized, never dumped.
@@ -204,6 +218,17 @@ mod tests {
     use id3::TagLike;
     use id3::frame::Comment;
     use tempfile::TempDir;
+
+    #[test]
+    fn repeated_keys_get_numbered_suffixes() {
+        let mut keys = UniqueKeys::default();
+        let claimed: Vec<String> = ["APIC", "APIC", "TIT2", "APIC#2", "APIC"]
+            .into_iter()
+            .map(|key| keys.claim(key.to_owned()))
+            .collect();
+
+        assert_eq!(claimed, ["APIC", "APIC#2", "TIT2", "APIC#2#2", "APIC#3"]);
+    }
 
     fn tagged(dir: &TempDir, build: impl FnOnce(&mut Tag)) -> PathBuf {
         let path = dir.path().join("song.mp3");
