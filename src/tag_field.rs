@@ -15,7 +15,7 @@ use serde::{Deserialize, Deserializer};
 /// A tag named by its common field name (as used by MusicBrainz Picard and mutagen).
 ///
 /// Names are case-insensitive, and each field also accepts its ID3v2 frame ID.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TagField {
     /// Lead artist (TPE1).
     Artist,

@@ -4,7 +4,7 @@
 //! from what `idk show` would print; `null` clears the field. Keys that aren't
 //! field names (frame IDs such as `TENC`, or `date#2`) are skipped with a warning.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -82,6 +82,7 @@ fn parse_entry(
         }
     };
     let mut edits: Vec<Edit> = Vec::new();
+    let mut seen = HashSet::new();
     match object.get("tags") {
         Some(Value::Object(tags)) => {
             for (key, value) in tags {
@@ -97,7 +98,7 @@ fn parse_entry(
                     skipped.insert(key.clone());
                     continue;
                 };
-                if edits.iter().any(|(existing, _)| *existing == field) {
+                if !seen.insert(field.clone()) {
                     errors.push(format!("{at}.tags.{key}: {field} is given more than once"));
                     continue;
                 }
