@@ -169,6 +169,16 @@ fn render_json(path: &Path, tags: FileTags) -> Value {
     })
 }
 
+/// Prints one element of the top-level JSON array as soon as it is ready.
+///
+/// Together with the closing `]` this matches pretty-printing the whole array,
+/// without holding every file's tags in memory.
+fn print_json_item(item: &Value, first: bool) {
+    let pretty = serde_json::to_string_pretty(item).expect("JSON values serialize");
+    let opening = if first { "[\n" } else { ",\n" };
+    print!("{opening}  {}", pretty.replace('\n', "\n  "));
+}
+
 /// Runs `idk show` over every input file and returns the process exit code.
 ///
 /// Files are read concurrently, but output follows input order.
@@ -176,7 +186,6 @@ pub async fn run(args: ShowArgs) -> ExitCode {
     let show_progress = !args.json && !args.run.quiet && std::io::stdout().is_terminal();
     let fields = args.fields.clone();
     let verbose = args.verbose;
-    let mut json_files = Vec::new();
     let inputs = input::resolve(args.input.clone()).await;
     let mut failed = inputs.failures > 0;
     let mut first = true;
@@ -188,7 +197,9 @@ pub async fn run(args: ShowArgs) -> ExitCode {
         show_progress,
         move |path| read_tags(path, &fields, verbose),
         |progress, path: PathBuf, result| match result {
-            Ok(tags) if args.json => json_files.push(render_json(&path, tags)),
+            Ok(tags) if args.json => {
+                print_json_item(&render_json(&path, tags), std::mem::take(&mut first));
+            }
             Ok(tags) => {
                 let separator = if std::mem::take(&mut first) { "" } else { "\n" };
                 progress.suspend(|| print!("{separator}{}", render_text(&path, &tags)));
@@ -202,8 +213,8 @@ pub async fn run(args: ShowArgs) -> ExitCode {
     .await;
 
     if args.json {
-        let out = serde_json::to_string_pretty(&json_files).expect("JSON values serialize");
-        println!("{out}");
+        // `first` is still set only when no file produced output.
+        println!("{}", if first { "[]" } else { "\n]" });
     }
     if failed {
         ExitCode::FAILURE
