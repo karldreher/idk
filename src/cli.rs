@@ -341,7 +341,7 @@ pub struct InputArgs {
     pub files: Vec<PathBuf>,
 
     /// Walk directories recursively, including every .mp3 file.
-    #[arg(short, long)]
+    #[arg(short, long, visible_alias = "recurse")]
     pub recursive: bool,
 
     /// Also read inputs from a file, one per line (or NUL-separated); "-" reads stdin.
