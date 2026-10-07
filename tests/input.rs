@@ -71,6 +71,19 @@ fn recursive_updates_a_nested_library() {
 }
 
 #[test]
+fn recurse_is_an_alias_for_recursive() {
+    let dir = TempDir::new().unwrap();
+    mp3(dir.path(), "Artist/Album/01.mp3", "Artist");
+
+    idk()
+        .args(["show", "--field", "artist", "--recurse"])
+        .arg(dir.path())
+        .assert()
+        .success()
+        .stdout(contains("artist: Artist"));
+}
+
+#[test]
 fn directory_without_recursive_fails_but_other_inputs_run() {
     let dir = TempDir::new().unwrap();
     let file = mp3(dir.path(), "a.mp3", "Artist");
