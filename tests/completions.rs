@@ -60,3 +60,13 @@ fn listed_in_help() {
         .success()
         .stdout(contains("completions"));
 }
+
+#[test]
+fn help_groups_subcommands_by_action() {
+    idk().arg("--help").assert().success().stdout(
+        contains("Read:\n  find")
+            .and(contains("Edit:\n  copy"))
+            .and(contains("Setup:\n  schema"))
+            .and(contains("Other:\n  help")),
+    );
+}

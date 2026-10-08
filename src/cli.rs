@@ -3,7 +3,7 @@
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
-use clap::{ArgAction, Args, Parser, Subcommand};
+use clap::{ArgAction, Args, CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
 use crate::find::{Condition, ConditionParser};
@@ -27,6 +27,60 @@ A string sets the field, null clears it, and fields left out are untouched.
 Keys that aren't field names are skipped with a warning; other keys on the
 object are ignored. `idk show --json` produces this format, if you want to
 start from the current tags."#;
+
+/// Top-level help groups: heading and the subcommands listed under it, in display order.
+const COMMAND_GROUPS: &[(&str, &[&str])] = &[
+    ("Read", &["find", "show"]),
+    ("Edit", &["copy", "set", "clear", "merge", "apply"]),
+    ("Setup", &["schema", "completions"]),
+];
+
+/// The `help` subcommand clap adds at build time, listed last in the top-level help.
+const HELP_SUBCOMMAND: (&str, &str) = (
+    "help",
+    "Print this message or the help of the given subcommand(s)",
+);
+
+/// The command model with top-level subcommands listed by [`COMMAND_GROUPS`].
+///
+/// clap lists every subcommand under one heading, so the top-level help is a custom template.
+pub fn command() -> clap::Command {
+    let cmd = Cli::command();
+    let about = |name: &str| {
+        cmd.find_subcommand(name)
+            .and_then(|sub| sub.get_about())
+            .map_or_else(String::new, ToString::to_string)
+    };
+    let mut rows: Vec<Option<(&str, String)>> = Vec::new();
+    for (_, names) in COMMAND_GROUPS {
+        rows.extend(names.iter().map(|name| Some((*name, about(name)))));
+        rows.push(None);
+    }
+    let width = rows
+        .iter()
+        .flatten()
+        .map(|(name, _)| name.len())
+        .chain([HELP_SUBCOMMAND.0.len()])
+        .max()
+        .unwrap_or_default();
+    let mut groups = String::new();
+    let mut rows = rows.into_iter();
+    for (heading, _) in COMMAND_GROUPS {
+        groups.push_str(&format!("{heading}:\n"));
+        for (name, about) in rows.by_ref().map_while(|row| row) {
+            groups.push_str(&format!("  {name:width$}  {about}\n"));
+        }
+        groups.push('\n');
+    }
+    let (name, about) = HELP_SUBCOMMAND;
+    groups.push_str(&format!("Other:\n  {name:width$}  {about}\n"));
+    // Braces in the listing would be read as template tags.
+    let groups = groups.replace('{', "{{").replace('}', "}}");
+    let template = format!(
+        "{{about-with-newline}}\n{{usage-heading}} {{usage}}\n\n{groups}\nOptions:\n{{options}}{{after-help}}"
+    );
+    cmd.help_template(template)
+}
 
 /// The ID3 Knife: automate MP3 ID3 tag operations.
 #[derive(Parser)]
@@ -388,5 +442,23 @@ impl RunOptions {
         self.jobs
             .or_else(|| std::thread::available_parallelism().ok())
             .map_or(1, NonZeroUsize::get)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_subcommand_is_in_exactly_one_help_group() {
+        let mut grouped: Vec<&str> = COMMAND_GROUPS
+            .iter()
+            .flat_map(|(_, names)| names.iter().copied())
+            .collect();
+        grouped.sort_unstable();
+        let cmd = Cli::command();
+        let mut defined: Vec<&str> = cmd.get_subcommands().map(clap::Command::get_name).collect();
+        defined.sort_unstable();
+        assert_eq!(grouped, defined);
     }
 }
