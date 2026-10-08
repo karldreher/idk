@@ -9,6 +9,21 @@ Download the archive for your platform from [Releases](https://github.com/karldr
 cargo install --path .
 ```
 
+### Shell completions
+
+`idk completions <SHELL>` prints a completion script to stdout for `bash`, `zsh`, `fish`, `powershell` and `elvish`.
+
+```bash
+# bash
+idk completions bash > ~/.local/share/bash-completion/completions/idk
+
+# zsh (any directory on $fpath; run compinit afterwards)
+idk completions zsh > "${fpath[1]}/_idk"
+
+# fish
+idk completions fish > ~/.config/fish/completions/idk.fish
+```
+
 ## Usage
 
 ### Input files

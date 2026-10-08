@@ -15,7 +15,7 @@ mod tag_field;
 use std::process::ExitCode;
 
 use clap::error::ErrorKind;
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, FromArgMatches};
 
 use cli::{
     ClearTarget, Cli, Command, CopyTagsArgs, CopyTarget, MergeArgs, MergeTarget, SchemaAction,
@@ -29,7 +29,7 @@ const USAGE_ERROR: u8 = 2;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli = Cli::from_arg_matches(&cli::command().get_matches()).unwrap_or_else(|err| err.exit());
     match cli.command {
         Command::Copy {
             target: CopyTarget::Tags(args),
@@ -84,6 +84,10 @@ async fn main() -> ExitCode {
         Command::Schema {
             action: SchemaAction::Validate { config },
         } => schema::validate(&config).await,
+        Command::Completions { shell } => {
+            clap_complete::generate(shell, &mut Cli::command(), "idk", &mut std::io::stdout());
+            ExitCode::SUCCESS
+        }
     }
 }
 
