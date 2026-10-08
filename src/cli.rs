@@ -28,11 +28,11 @@ Keys that aren't field names are skipped with a warning; other keys on the
 object are ignored. `idk show --json` produces this format, if you want to
 start from the current tags."#;
 
-/// Top-level help groups: heading and the subcommands listed under it, in display order.
+/// Top-level help groups: heading and the subcommands listed under it, alphabetized.
 const COMMAND_GROUPS: &[(&str, &[&str])] = &[
     ("Read", &["find", "show"]),
-    ("Edit", &["copy", "set", "clear", "merge", "apply"]),
-    ("Setup", &["schema", "completions"]),
+    ("Edit", &["apply", "clear", "copy", "merge", "set"]),
+    ("Setup", &["completions", "schema"]),
 ];
 
 /// The `help` subcommand clap adds at build time, listed last in the top-level help.
@@ -448,6 +448,13 @@ impl RunOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn help_groups_are_alphabetized() {
+        for (heading, names) in COMMAND_GROUPS {
+            assert!(names.is_sorted(), "{heading} group is not alphabetized");
+        }
+    }
 
     #[test]
     fn every_subcommand_is_in_exactly_one_help_group() {
