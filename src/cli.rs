@@ -14,6 +14,19 @@ pub const DEFAULT_CONFIG: &str = "idk.yaml";
 /// Where `idk schema write` puts the schema by default.
 pub const DEFAULT_SCHEMA: &str = "idk.yaml.json";
 
+/// Input format shown at the end of `idk apply --help`.
+const APPLY_HELP: &str = r#"Input is a JSON array with one object per file:
+
+  [
+    {"path": "a.mp3", "tags": {"artist": "Artist", "albumartist": "Artist"}},
+    {"path": "b.mp3", "tags": {"genre": null}}
+  ]
+
+A string sets the field, null clears it, and fields left out are untouched.
+Keys that aren't field names are skipped with a warning; other keys on the
+object are ignored. `idk show --json` produces this format, if you want to
+start from the current tags."#;
+
 /// The ID3 Knife: automate MP3 ID3 tag operations.
 #[derive(Parser)]
 #[command(name = "idk", version, about)]
@@ -40,7 +53,7 @@ pub enum Command {
         #[command(subcommand)]
         target: MergeTarget,
     },
-    /// Apply tag edits from `idk show --json` output.
+    /// Apply per-file tag edits from a JSON file.
     Apply(ApplyArgs),
     /// Remove fields.
     Clear {
@@ -83,8 +96,9 @@ pub enum SchemaAction {
 
 /// Arguments for `idk apply`.
 #[derive(Args)]
+#[command(after_help = APPLY_HELP)]
 pub struct ApplyArgs {
-    /// JSON in the `idk show --json` format; "-" reads stdin.
+    /// JSON array of {"path", "tags"} objects; "-" reads stdin.
     #[arg(value_name = "PATH")]
     pub source: PathBuf,
 

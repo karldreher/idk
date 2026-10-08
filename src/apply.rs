@@ -1,8 +1,11 @@
-//! `idk apply`: write tag edits from `idk show --json` output back to files.
+//! `idk apply`: write per-file tag edits from a JSON array of
+//! `{"path", "tags"}` objects.
 //!
-//! For each entry, every `tags` key naming a field is written when it differs
-//! from what `idk show` would print; `null` clears the field. Keys that aren't
-//! field names (frame IDs such as `TENC`, or `date#2`) are skipped with a warning.
+//! For each entry, every `tags` key naming a field (a field name, alias or
+//! frame ID of a known field such as `TPE1`) is written when it differs from
+//! what `idk show` would print; `null` clears the field and omitted fields are
+//! untouched. Other keys (such as `TENC` or `date#2`) are skipped with a
+//! warning. `idk show --json` emits this format, but any source works.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::Read;
