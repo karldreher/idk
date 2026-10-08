@@ -84,6 +84,10 @@ async fn main() -> ExitCode {
         Command::Schema {
             action: SchemaAction::Validate { config },
         } => schema::validate(&config).await,
+        Command::Completions { shell } => {
+            clap_complete::generate(shell, &mut Cli::command(), "idk", &mut std::io::stdout());
+            ExitCode::SUCCESS
+        }
     }
 }
 

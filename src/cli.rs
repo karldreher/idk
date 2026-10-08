@@ -4,6 +4,7 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use clap::{ArgAction, Args, Parser, Subcommand};
+use clap_complete::Shell;
 
 use crate::find::{Condition, ConditionParser};
 use crate::tag_field::{AssignmentParser, TagField, TagFieldParser};
@@ -74,6 +75,12 @@ pub enum Command {
         /// What to do.
         #[command(subcommand)]
         action: SchemaAction,
+    },
+    /// Print a shell completion script to stdout.
+    Completions {
+        /// Shell to generate the script for.
+        #[arg(value_enum)]
+        shell: Shell,
     },
 }
 
