@@ -181,15 +181,30 @@ Files without an ID3v2 tag have `"version": null` and empty `tags`. `-j/--jobs` 
 
 ### Apply edits from JSON
 
+`apply` sets different values on different files from one JSON file. Write the edits by hand:
+
+```json
+[
+  { "path": "a.mp3", "tags": { "artist": "Artist", "albumartist": "Artist" } },
+  { "path": "b.mp3", "tags": { "genre": null } }
+]
+```
+
 ```bash
-idk show --json *.mp3 > tags.json
-$EDITOR tags.json                       # or: jq '.[].tags.genre = "Rock"' ...
-idk apply tags.json --dry-run
-idk apply tags.json
+idk apply edits.json --dry-run
+idk apply edits.json
+cat edits.json | idk apply -
+```
+
+The input is a JSON array (`-` reads stdin). Each object needs `path` and `tags`; other keys on the object, including `version`, are ignored. In `tags`, a string sets the field, `null` clears it, and fields left out are untouched. Only keys naming a field are written: field names, aliases and the frame ID of a known field (`TPE1`). Other keys (`TENC`, `COMM:<description>`, `date#2`) are skipped with a warning.
+
+To start from the current tags, `show --json` emits this format, so you can edit its output and apply it back:
+
+```bash
 idk show --json *.mp3 | jq '.[].tags.album |= ascii_upcase' | idk apply -
 ```
 
-Takes the `show --json` format (`-` reads stdin). For each entry, every `tags` key naming a field is written when its value differs from what `show` prints; `null` clears the field; keys left out are untouched. Keys that aren't field names (frame IDs like `TENC`, `COMM:<description>`, `date#2`) are skipped with a warning, and `version` is ignored. Applying unedited `show` output changes nothing.
+Values equal to what `show` prints are not rewritten, so applying unedited `show` output changes nothing.
 
 Malformed JSON, a wrong shape, non-string values or the same file listed twice exit `2` before any file is touched. Missing files are failures (exit `1`) while other entries still apply. Values joined with `; ` by `show` are written back as a single value if edited.
 
