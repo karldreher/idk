@@ -65,8 +65,8 @@ fn listed_in_help() {
 fn help_groups_subcommands_by_action() {
     idk().arg("--help").assert().success().stdout(
         contains("Read:\n  find")
-            .and(contains("Edit:\n  copy"))
-            .and(contains("Setup:\n  schema"))
+            .and(contains("Edit:\n  apply"))
+            .and(contains("Setup:\n  completions"))
             .and(contains("Other:\n  help")),
     );
 }
