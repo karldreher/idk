@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::pin::pin;
+use std::process::ExitCode;
 use std::sync::Arc;
 
 use futures_util::StreamExt;
@@ -74,6 +75,15 @@ pub async fn process_unique<T, Op>(
     progress.finish_and_clear();
 }
 
+/// Exit code 1 when anything failed, otherwise 0.
+pub fn exit_code(failed: bool) -> ExitCode {
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
 /// Builds the overall progress bar on stderr.
 ///
 /// indicatif also hides it automatically when stderr is not a terminal, so
@@ -93,7 +103,7 @@ fn progress_bar(len: u64, show: bool) -> ProgressBar {
 ///
 /// Two concurrent writers on one file would race, so duplicates (for example
 /// `a.mp3` and `./a.mp3`) must be collapsed before dispatch.
-async fn unique_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
+pub async fn unique_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
     tokio::task::spawn_blocking(move || {
         let mut seen = HashSet::new();
         files

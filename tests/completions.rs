@@ -1,12 +1,10 @@
 //! End-to-end tests for `idk completions`.
 
-use assert_cmd::Command;
 use predicates::prelude::*;
 use predicates::str::contains;
 
-fn idk() -> Command {
-    Command::cargo_bin("idk").unwrap()
-}
+mod common;
+use common::idk;
 
 #[test]
 fn prints_a_script_for_every_shell() {

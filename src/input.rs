@@ -18,6 +18,8 @@ pub struct Inputs {
     pub files: Vec<PathBuf>,
     /// Inputs that failed to resolve; each was reported on stderr.
     pub failures: usize,
+    /// Whether no two entries of `files` name the same file, so the runner can skip deduping.
+    pub unique: bool,
 }
 
 /// Resolves `args` into files, reporting unresolvable inputs on stderr.
@@ -33,6 +35,7 @@ pub async fn resolve(args: InputArgs) -> Inputs {
     Inputs {
         files,
         failures: errors.len(),
+        unique: false,
     }
 }
 
