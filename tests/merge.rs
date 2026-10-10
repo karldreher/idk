@@ -52,6 +52,7 @@ fn merges_genres_from_cli() {
             "--to",
             "Rock",
         ])
+        .arg("--confirm")
         .args([&heavy, &metal, &jazz])
         .assert()
         .success()
@@ -78,6 +79,7 @@ fn comma_separated_from_is_followed_directly_by_files() {
             "--from",
             "Heavy Metal,Metal",
         ])
+        .arg("--confirm")
         .args([&heavy, &metal])
         .assert()
         .success()
@@ -104,6 +106,7 @@ fn repeated_from_flags_are_combined() {
             "--to",
             "Rock",
         ])
+        .arg("--confirm")
         .args([&heavy, &metal])
         .assert()
         .success();
@@ -120,6 +123,7 @@ fn leading_comma_adds_empty_source_to_fill_missing_values() {
 
     idk()
         .args(["merge", "genres", "--from", ",Metal", "--to", "Rock"])
+        .arg("--confirm")
         .args([&missing, &metal])
         .assert()
         .success();
@@ -135,14 +139,14 @@ fn merges_genres_and_artists_from_config() {
     let file = mp3(&dir, "a.mp3", Some("Heavy Metal"), Some("the Beatles"));
 
     idk()
-        .args(["merge", "genres", "--config"])
+        .args(["merge", "genres", "--confirm", "--config"])
         .arg(&config)
         .arg(&file)
         .assert()
         .success();
     idk()
         .current_dir(dir.path())
-        .args(["merge", "artists", "a.mp3", "--config"])
+        .args(["merge", "artists", "a.mp3", "--confirm", "--config"])
         .assert()
         .success();
 
@@ -167,6 +171,7 @@ fn dry_run_previews_merge() {
             "Rock",
             "--dry-run",
         ])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success()
@@ -185,6 +190,7 @@ fn empty_source_fills_missing_genre() {
 
     idk()
         .args(["merge", "genres", "--from", "", "--to", "Unknown"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success();
@@ -227,7 +233,7 @@ fn invalid_config_exits_1_before_touching_files() {
     for (yaml, message) in cases {
         let config = write_config(dir.path(), "c.yaml", yaml);
         idk()
-            .args(["merge", "genres", "--config"])
+            .args(["merge", "genres", "--confirm", "--config"])
             .arg(&config)
             .arg(&file)
             .assert()
@@ -246,6 +252,7 @@ fn usage_errors_exit_2_before_touching_files() {
 
     idk()
         .args(["merge", "genres", "--from", "Metal", "--to", " "])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .code(2)
@@ -254,12 +261,14 @@ fn usage_errors_exit_2_before_touching_files() {
         ));
     idk()
         .args(["merge", "genres", "--to", "Rock", "--config", "c.yaml"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .code(2)
         .stderr(contains("cannot be used with"));
     idk()
         .args(["merge", "genres", "--from", "Metal"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .code(2)

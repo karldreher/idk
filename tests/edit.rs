@@ -26,6 +26,7 @@ fn sets_fields_across_many_files() {
 
     idk()
         .args(["set", "tags", "--field", "albumartist=Various Artists"])
+        .arg("--confirm")
         .args(["--field", "genre=Rock", "--field", "txxx:Source=CD"])
         .args(&files)
         .assert()
@@ -52,6 +53,7 @@ fn value_may_contain_equals_signs() {
 
     idk()
         .args(["set", "tags", "--field", "comment=a=b"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success();
@@ -68,6 +70,7 @@ fn creates_tag_on_untagged_file() {
 
     idk()
         .args(["set", "tags", "--field", "artist=Artist"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success();
@@ -93,6 +96,7 @@ fn set_dry_run_previews_each_field_without_writing() {
             "album=Album",
             "-n",
         ])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success()
@@ -113,6 +117,7 @@ fn set_leaves_matching_files_untouched() {
 
     idk()
         .args(["set", "tags", "--field", "genre=Rock"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success()
@@ -139,6 +144,7 @@ fn set_usage_errors_exit_2() {
     for (args, message) in cases {
         idk()
             .args(["set", "tags"])
+            .arg("--confirm")
             .args(&args)
             .arg("x.mp3")
             .assert()
@@ -166,6 +172,7 @@ fn clears_fields_and_leaves_others() {
 
     idk()
         .args(["clear", "tags", "--field", "comment", "--field", "year"])
+        .arg("--confirm")
         .args(["--field", "txxx:Source"])
         .arg(&file)
         .assert()
@@ -205,6 +212,7 @@ fn clear_on_untagged_or_absent_field_is_unchanged() {
 
     idk()
         .args(["clear", "tags", "--field", "genre"])
+        .arg("--confirm")
         .args([&bare, &tagged])
         .assert()
         .success()
@@ -224,7 +232,24 @@ fn clear_usage_errors_exit_2() {
         .stderr(contains("--field genre given more than once"));
     idk()
         .args(["clear", "tags", "--field", "genres", "x.mp3"])
+        .arg("--confirm")
         .assert()
         .code(2)
         .stderr(contains("invalid value 'genres'"));
+}
+
+#[test]
+fn without_confirm_a_non_interactive_run_refuses_to_write() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", |tag| tag.set_genre("Pop"));
+
+    idk()
+        .args(["set", "tags", "--field", "genre=Rock"])
+        .arg(&file)
+        .assert()
+        .failure()
+        .code(2)
+        .stderr(contains("--confirm"));
+
+    assert_eq!(tag(&file).genre(), Some("Pop"));
 }

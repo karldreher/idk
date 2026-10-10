@@ -48,6 +48,7 @@ fn copies_artist_to_album_artist_across_many_files() {
 
     idk()
         .args(["copy", "tags", "--from", "artist", "--to", "albumartist"])
+        .arg("--confirm")
         .args(&files)
         .assert()
         .success()
@@ -67,6 +68,7 @@ fn copies_album_artist_to_artist() {
 
     idk()
         .args(["copy", "tags", "--from", "albumartist", "--to", "artist"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success()
@@ -82,6 +84,7 @@ fn accepts_frame_id_and_hyphenated_aliases() {
 
     idk()
         .args(["copy", "tags", "--from", "TPE1", "--to", "album-artist"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success();
@@ -96,6 +99,7 @@ fn skips_empty_source_by_default() {
 
     idk()
         .args(["copy", "tags", "--from", "artist", "--to", "albumartist"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success()
@@ -120,6 +124,7 @@ fn fail_on_empty_reports_and_fails() {
             "albumartist",
             "--fail-on-empty",
         ])
+        .arg("--confirm")
         .args([&empty, &full])
         .assert()
         .failure()
@@ -138,6 +143,7 @@ fn missing_file_fails_without_stopping_others() {
 
     idk()
         .args(["copy", "tags", "--from", "artist", "--to", "albumartist"])
+        .arg("--confirm")
         .args([&missing, &file])
         .assert()
         .code(1)
@@ -154,6 +160,7 @@ fn rejects_identical_source_and_destination() {
 
     idk()
         .args(["copy", "tags", "--from", "artist", "--to", "TPE1"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .code(2)
@@ -164,11 +171,13 @@ fn rejects_identical_source_and_destination() {
 fn requires_from_to_and_files() {
     idk()
         .args(["copy", "tags", "--from", "artist", "x.mp3"])
+        .arg("--confirm")
         .assert()
         .code(2)
         .stderr(contains("--to <TO>"));
     idk()
         .args(["copy", "tags", "--from", "artist", "--to", "albumartist"])
+        .arg("--confirm")
         .assert()
         .code(2)
         .stderr(contains("<FILES>"));
@@ -189,6 +198,7 @@ fn quiet_hides_summary() {
             "albumartist",
             "--quiet",
         ])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success()
@@ -202,6 +212,7 @@ fn copies_between_text_comment_and_txxx_fields() {
 
     idk()
         .args(["copy", "tags", "--from", "title", "--to", "comment"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success();
@@ -214,6 +225,7 @@ fn copies_between_text_comment_and_txxx_fields() {
             "--to",
             "TXXX:Original Title",
         ])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success();
@@ -243,6 +255,7 @@ fn copies_date_to_year_on_id3v23() {
 
     idk()
         .args(["copy", "tags", "--from", "txxx:released", "--to", "date"])
+        .arg("--confirm")
         .arg(&file)
         .assert()
         .success()
@@ -292,6 +305,7 @@ fn dry_run_previews_without_modifying_files() {
             "albumartist",
             "--dry-run",
         ])
+        .arg("--confirm")
         .args([&changed, &unset])
         .assert()
         .success()
@@ -329,6 +343,7 @@ fn dry_run_exit_code_matches_real_run() {
             "-n",
             "--fail-on-empty",
         ])
+        .arg("--confirm")
         .arg(&empty)
         .assert()
         .code(1)
@@ -346,7 +361,7 @@ fn reads_fields_from_config_file() {
     );
 
     idk()
-        .args(["copy", "tags", "--config"])
+        .args(["copy", "tags", "--confirm", "--config"])
         .arg(&config)
         .arg(&file)
         .assert()
@@ -368,7 +383,7 @@ fn bare_config_flag_reads_idk_yaml_from_working_directory() {
 
     idk()
         .current_dir(dir.path())
-        .args(["copy", "tags", "a.mp3", "--config"])
+        .args(["copy", "tags", "a.mp3", "--confirm", "--config"])
         .assert()
         .success();
 
@@ -385,7 +400,7 @@ fn config_conflicts_with_from_and_to() {
     );
 
     idk()
-        .args(["copy", "tags", "--from", "artist", "--config"])
+        .args(["copy", "tags", "--from", "artist", "--confirm", "--config"])
         .arg(&config)
         .arg("x.mp3")
         .assert()
@@ -421,7 +436,7 @@ fn invalid_config_exits_1_before_touching_files() {
     for (yaml, message) in cases {
         let config = write_config(dir.path(), "c.yaml", yaml);
         idk()
-            .args(["copy", "tags", "--config"])
+            .args(["copy", "tags", "--confirm", "--config"])
             .arg(&config)
             .arg(&file)
             .assert()
@@ -430,7 +445,7 @@ fn invalid_config_exits_1_before_touching_files() {
     }
 
     idk()
-        .args(["copy", "tags", "--config"])
+        .args(["copy", "tags", "--confirm", "--config"])
         .arg(dir.path().join("missing.yaml"))
         .arg(&file)
         .assert()
