@@ -110,6 +110,7 @@ fn output_pipes_into_other_commands() {
             "--files-from",
             "-",
         ])
+        .arg("--confirm")
         .write_stdin(matches)
         .assert()
         .success()

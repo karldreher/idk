@@ -416,6 +416,19 @@ pub struct WriteOptions {
     /// Show what would change without writing any file.
     #[arg(short = 'n', long)]
     pub dry_run: bool,
+
+    /// Write changes without prompting for each file.
+    ///
+    /// Without it, each changed file is shown and needs a y/n answer on the terminal.
+    #[arg(long)]
+    pub confirm: bool,
+}
+
+impl WriteOptions {
+    /// Whether each changed file needs an answer before it is written.
+    pub fn prompts(&self) -> bool {
+        !self.confirm && !self.dry_run
+    }
 }
 
 /// Files an operation reads, shared by every file-processing command.

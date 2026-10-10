@@ -41,8 +41,8 @@ Results are de-duplicated, so overlapping inputs process each file once. Input e
 ### Copy one tag into another
 
 ```bash
-idk copy tags --from artist --to albumartist song.mp3
-idk copy tags --from albumartist --to artist *.mp3
+idk copy tags --from artist --to albumartist song.mp3 --confirm
+idk copy tags --from albumartist --to artist *.mp3 --confirm
 idk copy tags --from artist --to albumartist --dry-run *.mp3   # preview only
 ```
 
@@ -66,6 +66,7 @@ Tag names are case-insensitive; `txxx:` descriptions are matched exactly.
 
 | Option            | Description                                                          |
 |-------------------|----------------------------------------------------------------------|
+| `--confirm`       | Write without prompting for each file (see [Confirmation](#confirmation)) |
 | `-n, --dry-run`   | Print each change (`song.mp3: albumartist "Old" -> "New"`) without writing any file |
 | `--fail-on-empty` | Treat files with no source value as failures instead of skipping them |
 | `-j, --jobs <N>`  | Maximum files processed concurrently (default: available CPUs)       |
@@ -73,10 +74,23 @@ Tag names are case-insensitive; `txxx:` descriptions are matched exactly.
 
 Exit codes: `0` success, `1` one or more files failed, `2` invalid usage.
 
+### Confirmation
+
+Commands that write (`copy tags`, `set tags`, `clear tags`, `merge`, `apply`) show each file's changes and ask before writing it:
+
+```
+song.mp3: albumartist "Old" -> "New"
+Write song.mp3? [y/N/a/q]
+```
+
+`y` writes the file, `n` (or Enter) skips it, `a` writes this file and all remaining ones, and `q` stops without writing more. Skipped files are counted as `declined` in the summary. Prompts follow input order.
+
+Pass `--confirm` to write without prompting, as scripts and pipelines need. Without `--confirm`, stdin must be a terminal: otherwise the command exits with code `2` and writes nothing. That includes `apply -` and `--files-from -`, which read stdin. `--dry-run` never prompts and never writes.
+
 ### Set tags
 
 ```bash
-idk set tags --field albumartist="Various Artists" --field genre=Rock *.mp3
+idk set tags --field albumartist="Various Artists" --field genre=Rock *.mp3 --confirm
 idk set tags --field "txxx:Source=CD" --dry-run *.mp3
 ```
 
@@ -85,7 +99,7 @@ idk set tags --field "txxx:Source=CD" --dry-run *.mp3
 ### Clear tags
 
 ```bash
-idk clear tags --field comment --field "txxx:Source" *.mp3
+idk clear tags --field comment --field "txxx:Source" *.mp3 --confirm
 ```
 
 `--field FIELD` is repeatable. `date` removes both `TDRC` and `TYER`; `comment` removes only comments with an empty description; `txxx:<description>` removes only that description. Files without the field (or without a tag) are unchanged and not rewritten.
@@ -95,10 +109,10 @@ idk clear tags --field comment --field "txxx:Source" *.mp3
 Replace variant values with one canonical value. Matching ignores case and surrounding whitespace, `""` matches a missing or empty value, and genre references such as `(9)` match by name (`Metal`).
 
 ```bash
-idk merge genres --from "Heavy Metal","Metal" --to Rock *.mp3
-idk merge artists --from "Beatles","the beatles" --to "The Beatles" *.mp3
-idk merge genres --from "" --to Unknown *.mp3            # fill missing genres
-idk merge genres --from ",Metal" --to Rock *.mp3         # fill missing and merge Metal
+idk merge genres --from "Heavy Metal","Metal" --to Rock *.mp3 --confirm
+idk merge artists --from "Beatles","the beatles" --to "The Beatles" *.mp3 --confirm
+idk merge genres --from "" --to Unknown *.mp3 --confirm            # fill missing genres
+idk merge genres --from ",Metal" --to Rock *.mp3 --confirm         # fill missing and merge Metal
 ```
 
 `--from` takes comma-separated values: quote each value that contains spaces (`--from "Heavy Metal","Metal"`), or repeat the flag (`--from "Heavy Metal" --from Metal`). The shell joins `"a","b"` into the single argument `a,b`, so idk splits on the commas. Values that themselves contain a comma belong in the config file's `from:` list. `merge genres` changes only `TCON`; `merge artists` changes only `TPE1`. `--dry-run`, `--jobs` and `--quiet` work as for `copy tags`.
@@ -125,9 +139,9 @@ tags:
 ```
 
 ```bash
-idk merge genres --config my-cool-file.yaml *.mp3
-idk merge artists *.mp3 --config      # bare --config reads ./idk.yaml
-idk copy tags *.mp3 --config
+idk merge genres --config my-cool-file.yaml *.mp3 --confirm
+idk merge artists *.mp3 --config --confirm      # bare --config reads ./idk.yaml
+idk copy tags *.mp3 --config --confirm
 ```
 
 The config file is optional, but whenever one is given it is validated against idk's JSON Schema before any audio file is touched. Every violation is reported with its key path (for example `tags.merge.genres.to: ["Rock"] is not of type "string"`), and the run exits with `1`.
@@ -161,7 +175,7 @@ tags:
 ```bash
 idk find -r ~/Music --missing albumartist
 idk find -r ~/Music --where albumartist!=@artist --where genre~^metal -i
-idk find -r ~/Music --missing genre -0 | idk set tags --field genre=Unknown --files-from -
+idk find -r ~/Music --missing genre -0 | idk set tags --field genre=Unknown --files-from - --confirm
 ```
 
 Prints the path of every file matching **all** conditions, in input order:
@@ -208,8 +222,8 @@ Files without an ID3v2 tag have `"version": null` and empty `tags`. `-j/--jobs` 
 
 ```bash
 idk apply edits.json --dry-run
-idk apply edits.json
-cat edits.json | idk apply -
+idk apply edits.json --confirm
+cat edits.json | idk apply - --confirm
 ```
 
 The input is a JSON array (`-` reads stdin). Each object needs `path` and `tags`; other keys on the object, including `version`, are ignored. In `tags`, a string sets the field, `null` clears it, and fields left out are untouched. Only keys naming a field are written: field names, aliases and the frame ID of a known field (`TPE1`). Other keys (`TENC`, `COMM:<description>`, `date#2`) are skipped with a warning.
@@ -217,7 +231,7 @@ The input is a JSON array (`-` reads stdin). Each object needs `path` and `tags`
 To start from the current tags, `show --json` emits this format, so you can edit its output and apply it back:
 
 ```bash
-idk show --json *.mp3 | jq '.[].tags.album |= ascii_upcase' | idk apply -
+idk show --json *.mp3 | jq '.[].tags.album |= ascii_upcase' | idk apply - --confirm
 ```
 
 Values equal to what `show` prints are not rewritten, so applying unedited `show` output changes nothing.

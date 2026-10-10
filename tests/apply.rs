@@ -53,6 +53,7 @@ fn unedited_show_output_is_a_no_op() {
     idk()
         .current_dir(dir.path())
         .args(["apply", "-"])
+        .arg("--confirm")
         .write_stdin(json)
         .assert()
         .success()
@@ -81,6 +82,7 @@ fn edited_values_are_written_and_nulls_cleared() {
     idk()
         .current_dir(dir.path())
         .args(["apply", "edits.json"])
+        .arg("--confirm")
         .assert()
         .success()
         .stdout(contains("1 updated"));
@@ -119,6 +121,7 @@ fn missing_files_fail_while_others_apply() {
     idk()
         .current_dir(dir.path())
         .args(["apply", "-"])
+        .arg("--confirm")
         .write_stdin(
             r#"[{"path": "missing.mp3", "tags": {"genre": "Rock"}},
                 {"path": "a.mp3", "tags": {"genre": "Rock"}}]"#,
@@ -153,6 +156,7 @@ fn invalid_input_exits_2_before_touching_files() {
         idk()
             .current_dir(dir.path())
             .args(["apply", "-"])
+            .arg("--confirm")
             .write_stdin(json)
             .assert()
             .code(2)
@@ -161,6 +165,7 @@ fn invalid_input_exits_2_before_touching_files() {
     idk()
         .current_dir(dir.path())
         .args(["apply", "nope.json"])
+        .arg("--confirm")
         .assert()
         .code(2)
         .stderr(contains("nope.json"));

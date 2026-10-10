@@ -49,6 +49,7 @@ fn recursive_updates_a_nested_library() {
             "albumartist",
             "-r",
         ])
+        .arg("--confirm")
         .arg(dir.path())
         .assert()
         .success()
@@ -84,6 +85,7 @@ fn directory_without_recursive_fails_but_other_inputs_run() {
 
     idk()
         .args(["set", "tags", "--field", "genre=Rock"])
+        .arg("--confirm")
         .args([&sub, &file])
         .assert()
         .code(1)
@@ -125,6 +127,7 @@ fn inputs_are_deduplicated_across_sources() {
             "-r",
             ".",
         ])
+        .arg("--confirm")
         .assert()
         .success()
         .stdout(contains("1 updated, 0 unchanged, 0 failed"));
@@ -138,6 +141,7 @@ fn reads_inputs_from_stdin() {
 
     idk()
         .args(["set", "tags", "--field", "genre=Rock", "--files-from", "-"])
+        .arg("--confirm")
         .write_stdin(format!("{}\n{}\n", a.display(), b.display()))
         .assert()
         .success()
