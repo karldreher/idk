@@ -201,13 +201,15 @@ idk show --field artist --field albumartist *.mp3
 
 Known frames are shown by the field names above; other frames by their frame ID (comments with a description as `COMM:<description>`). Pictures are summarized as `image/jpeg, 12345 bytes`. `PRIV` (vendor private data, e.g. Amazon's), `TCOP` (copyright) and `TSSE` (encoder settings) are hidden unless `-v/--verbose` is given; with it, `PRIV` is summarized as `www.amazon.com, 1024 bytes`. Output follows input order.
 
+Tags are sorted by name, with field names first and frame IDs (upper case) after. Absent fields are listed too: the fields named by `--field`, or by default `title`, `artist`, `albumartist`, `album`, `tracknumber`, `discnumber`, `date` and `genre`. They print as `(no value)` (`albumartist: (no value)`) and as `null` in JSON; `apply` treats `null` on an absent field as no change.
+
 With `--json`, stdout is one array:
 
 ```json
-[{ "path": "song.mp3", "version": "2.4", "tags": { "artist": "Artist", "title": "Title" } }]
+[{ "path": "song.mp3", "version": "2.4", "tags": { "artist": "Artist", "title": "Title", "albumartist": null } }]
 ```
 
-Files without an ID3v2 tag have `"version": null` and empty `tags`. `-j/--jobs` and `-q/--quiet` apply as for `copy tags`.
+Files without an ID3v2 tag have `"version": null` and empty `tags` (no absent fields are listed). `-j/--jobs` and `-q/--quiet` apply as for `copy tags`.
 
 ### Apply edits from JSON
 
