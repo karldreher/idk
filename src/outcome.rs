@@ -5,6 +5,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use clap::error::ErrorKind;
+use console::{Key, Term};
 use id3::Tag;
 use indicatif::ProgressBar;
 
@@ -37,7 +38,7 @@ pub async fn run_writes(
     }
     let mut report = Report::new(dry_run);
     report.failed = inputs.failures;
-    let mut prompter = Prompter::new(BufReader::new(std::io::stdin()));
+    let mut prompter = Prompter::new(terminal_answers());
     let files = if inputs.unique {
         inputs.files
     } else {
@@ -118,17 +119,39 @@ fn parse_answer(line: &str) -> Option<Answer> {
     }
 }
 
+/// Reads answers from the user, one per call; `None` means no more input.
+///
+/// On a terminal each key is an answer as soon as it is pressed, with Enter alone meaning
+/// no. Otherwise a whole line is read.
+fn terminal_answers() -> impl FnMut() -> Option<String> {
+    let term = Term::stderr();
+    let mut stdin = BufReader::new(std::io::stdin());
+    move || {
+        if !term.is_term() {
+            let mut line = String::new();
+            return matches!(stdin.read_line(&mut line), Ok(1..)).then_some(line);
+        }
+        let (answer, shown) = match term.read_key().ok()? {
+            Key::Char(key) => (key.to_string(), key.to_string()),
+            Key::Enter => (String::new(), String::new()),
+            _ => ("?".to_owned(), String::new()),
+        };
+        let _ = term.write_line(&shown);
+        Some(answer)
+    }
+}
+
 /// Asks, file by file, whether to write.
-struct Prompter<R> {
-    input: R,
+struct Prompter<F> {
+    next_answer: F,
     /// Set by `a` (write everything) or `q` and end of input (write nothing).
     decided: Option<bool>,
 }
 
-impl<R: BufRead> Prompter<R> {
-    fn new(input: R) -> Self {
+impl<F: FnMut() -> Option<String>> Prompter<F> {
+    fn new(next_answer: F) -> Self {
         Prompter {
-            input,
+            next_answer,
             decided: None,
         }
     }
@@ -143,11 +166,10 @@ impl<R: BufRead> Prompter<R> {
             loop {
                 eprint!("Write {}? [y/N/a/q] ", path.display());
                 let _ = std::io::stderr().flush();
-                let mut line = String::new();
-                if !matches!(self.input.read_line(&mut line), Ok(1..)) {
+                let Some(line) = (self.next_answer)() else {
                     self.decided = Some(false);
                     return false;
-                }
+                };
                 match parse_answer(&line) {
                     Some(Answer::Yes) => return true,
                     Some(Answer::No) => return false,
@@ -399,7 +421,8 @@ mod tests {
     }
 
     fn approvals(input: &str, files: usize) -> Vec<bool> {
-        let mut prompter = Prompter::new(input.as_bytes());
+        let mut lines = input.lines().map(str::to_owned);
+        let mut prompter = Prompter::new(move || lines.next());
         let progress = ProgressBar::hidden();
         (0..files)
             .map(|_| prompter.approve(Path::new("a.mp3"), &[], &progress))
