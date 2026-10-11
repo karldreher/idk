@@ -1,0 +1,7 @@
+[workspace]
+# Not published to crates.io: use git tags as the version baseline.
+git_only = true
+publish = false
+git_tag_name = "v{{ version }}"
+git_release_name = "idk v{{ version }}"
+changelog_update = true

@@ -104,12 +104,11 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Create release
+      # release-plz creates the release (with changelog notes) when it tags.
+      - name: Attach archives to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          gh release upload "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "idk $GITHUB_REF_NAME" \
-            --generate-notes \
-            --verify-tag
+            --clobber

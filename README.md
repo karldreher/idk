@@ -242,6 +242,10 @@ Malformed JSON, a wrong shape, non-string values or the same file listed twice e
 
 ## Release
 
-1. Bump `version` in `Cargo.toml` and merge to `main`.
-2. Tag and push: `git tag v0.2.0 && git push origin v0.2.0`.
-3. The Release workflow builds macOS (arm64, x86_64), Linux x86_64 and Windows x86_64 archives and publishes a GitHub Release with them attached.
+Releases are automated with [release-plz](https://release-plz.dev) from Conventional Commit titles (PRs are squash-merged, so the PR title is the commit).
+
+1. Each push to `main` opens or updates a release PR that bumps `version` in `Cargo.toml` and `Cargo.lock` and updates `CHANGELOG.md`. `feat:` and `fix:` commits trigger a release; `ci:`, `docs:`, `refactor:` and similar do not. A `!` or `BREAKING CHANGE` marks a breaking change.
+2. Merging the release PR tags `vX.Y.Z` and creates the GitHub Release.
+3. The tag triggers the Release workflow, which builds macOS (arm64, x86_64), Linux x86_64 and Windows x86_64 archives and attaches them to the release.
+
+The workflows authenticate with the `RELEASE_TOKEN` repository secret, a fine-grained PAT with Contents and Pull requests read/write, so that CI and the Release workflow run on release-plz's PRs and tags.

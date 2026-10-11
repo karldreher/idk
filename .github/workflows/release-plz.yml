@@ -1,0 +1,57 @@
+name: Release-plz
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # Tags and creates the GitHub release once a release PR has been merged.
+  # The tag push triggers release.yml, which attaches the build archives.
+  release:
+    name: Release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: release-plz-release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          # A PAT is required so the tag push triggers release.yml.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
+  # Opens or updates the release PR (version bump in Cargo.toml/Cargo.lock and CHANGELOG.md).
+  pull-request:
+    name: Release PR
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz-pr-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          # A PAT is required so CI runs on the release PR.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
