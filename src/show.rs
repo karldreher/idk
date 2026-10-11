@@ -12,14 +12,27 @@ use crate::input;
 use crate::runner::{self, Order};
 use crate::tag_field::TagField;
 
-/// One file's tags, in frame order.
+/// One file's tags, sorted by key.
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileTags {
     /// The ID3v2 version, or `None` when the file has no ID3v2 tag.
     pub version: Option<Version>,
     /// `(key, value)` pairs; keys are field names where known, otherwise frame IDs.
-    pub entries: Vec<(String, String)>,
+    /// The value is `None` for a wanted field the tag does not have.
+    pub entries: Vec<(String, Option<String>)>,
 }
+
+/// Fields listed even when absent, unless `--field` picks others.
+const CORE_FIELDS: [TagField; 8] = [
+    TagField::Title,
+    TagField::Artist,
+    TagField::AlbumArtist,
+    TagField::Album,
+    TagField::TrackNumber,
+    TagField::DiscNumber,
+    TagField::Date,
+    TagField::Genre,
+];
 
 /// Frames omitted unless `--verbose`: vendor data (e.g. Amazon's PRIV), copyright
 /// notices and encoder settings, which are rarely useful and often very large.
@@ -27,7 +40,9 @@ const VERBOSE_ONLY: &[&str] = &["PRIV", "TCOP", "TSSE"];
 
 /// Reads the tags of the file at `path`, keeping only `fields` when it is non-empty.
 ///
-/// Frames in [`VERBOSE_ONLY`] are skipped unless `verbose` is set.
+/// Frames in [`VERBOSE_ONLY`] are skipped unless `verbose` is set. Wanted fields
+/// (`fields`, or [`CORE_FIELDS`] when empty) that the tag lacks are listed with no value.
+/// Entries are sorted by key: field names first, then frame IDs (upper case).
 pub fn read_tags(path: &Path, fields: &[TagField], verbose: bool) -> id3::Result<FileTags> {
     let Some(tag) = id3::no_tag_ok(Tag::read_from_path(path))? else {
         return Ok(FileTags {
@@ -35,8 +50,9 @@ pub fn read_tags(path: &Path, fields: &[TagField], verbose: bool) -> id3::Result
             entries: Vec::new(),
         });
     };
-    let mut entries: Vec<(String, String)> = Vec::new();
+    let mut entries: Vec<(String, Option<String>)> = Vec::new();
     let mut keys = UniqueKeys::default();
+    let mut seen: HashSet<TagField> = HashSet::new();
     for frame in tag.frames() {
         if !verbose && VERBOSE_ONLY.contains(&frame.id()) {
             continue;
@@ -45,14 +61,33 @@ pub fn read_tags(path: &Path, fields: &[TagField], verbose: bool) -> id3::Result
         if !fields.is_empty() && !field.as_ref().is_some_and(|field| fields.contains(field)) {
             continue;
         }
+        if let Some(field) = &field {
+            seen.insert(field.clone());
+        }
         let key = field.map_or_else(|| frame_key(frame), |field| field.to_string());
         let key = keys.claim(key);
-        entries.push((key, frame_value(frame)));
+        entries.push((key, Some(frame_value(frame))));
     }
+    let wanted = if fields.is_empty() {
+        &CORE_FIELDS
+    } else {
+        fields
+    };
+    for field in wanted {
+        if seen.insert(field.clone()) {
+            entries.push((keys.claim(field.to_string()), None));
+        }
+    }
+    entries.sort_by(|(a, _), (b, _)| frame_ids_last(a).cmp(&frame_ids_last(b)));
     Ok(FileTags {
         version: Some(tag.version()),
         entries,
     })
+}
+
+/// Sort key placing field names (lower case) before frame IDs (upper case).
+fn frame_ids_last(key: &str) -> (bool, &str) {
+    (key.starts_with(|c: char| c.is_ascii_uppercase()), key)
 }
 
 /// Key for a frame without a field name: its ID, plus the description for comments.
@@ -149,7 +184,10 @@ fn render_text(path: &Path, tags: &FileTags) -> String {
         .map_or("no ID3v2 tag".to_owned(), |version| version.to_string());
     let mut out = format!("{} ({version})\n", path.display());
     for (key, value) in &tags.entries {
-        out.push_str(&format!("  {key}: {value}\n"));
+        out.push_str(&format!(
+            "  {key}: {}\n",
+            value.as_deref().unwrap_or("(no value)")
+        ));
     }
     out
 }
@@ -159,7 +197,7 @@ fn render_json(path: &Path, tags: FileTags) -> Value {
     let entries: Map<String, Value> = tags
         .entries
         .into_iter()
-        .map(|(key, value)| (key, Value::String(value)))
+        .map(|(key, value)| (key, value.map_or(Value::Null, Value::String)))
         .collect();
     json!({
         "path": path.display().to_string(),
@@ -237,8 +275,21 @@ mod tests {
         assert_eq!(claimed, ["APIC", "APIC#2", "TIT2", "APIC#2#2", "APIC#3"]);
     }
 
-    fn entry(key: &str, value: &str) -> (String, String) {
-        (key.to_owned(), value.to_owned())
+    fn entry(key: &str, value: &str) -> (String, Option<String>) {
+        (key.to_owned(), Some(value.to_owned()))
+    }
+
+    fn absent(key: &str) -> (String, Option<String>) {
+        (key.to_owned(), None)
+    }
+
+    /// The entries that have a value.
+    fn present(tags: &FileTags) -> Vec<(String, Option<String>)> {
+        tags.entries
+            .iter()
+            .filter(|(_, value)| value.is_some())
+            .cloned()
+            .collect()
     }
 
     #[test]
@@ -261,11 +312,58 @@ mod tests {
         assert_eq!(
             tags.entries,
             [
+                absent("album"),
+                absent("albumartist"),
                 entry("artist", "Artist"),
-                entry("TENC", "Encoder"),
+                absent("date"),
+                absent("discnumber"),
+                absent("genre"),
+                absent("title"),
+                absent("tracknumber"),
                 entry("txxx:custom", "x"),
                 entry("COMM:note", "n"),
+                entry("TENC", "Encoder"),
             ]
+        );
+    }
+
+    #[test]
+    fn lists_absent_albumartist_among_present_frames() {
+        let dir = TempDir::new().unwrap();
+        let path = mp3(&dir, |tag| tag.set_artist("Artist"));
+
+        let tags = read_tags(&path, &[], false).unwrap();
+
+        assert!(tags.entries.contains(&absent("albumartist")));
+        assert!(tags.entries.contains(&entry("artist", "Artist")));
+    }
+
+    #[test]
+    fn lists_requested_field_even_when_absent() {
+        let dir = TempDir::new().unwrap();
+        let path = mp3(&dir, |tag| tag.set_artist("Artist"));
+
+        let tags = read_tags(&path, &[TagField::AlbumArtist], false).unwrap();
+
+        assert_eq!(tags.entries, [absent("albumartist")]);
+    }
+
+    #[test]
+    fn present_albumartist_is_not_listed_twice() {
+        let dir = TempDir::new().unwrap();
+        let path = mp3(&dir, |tag| tag.set_album_artist("Various Artists"));
+
+        let tags = read_tags(&path, &[], false).unwrap();
+
+        let count = tags
+            .entries
+            .iter()
+            .filter(|(key, _)| key.starts_with("albumartist"))
+            .count();
+        assert_eq!(count, 1);
+        assert!(
+            tags.entries
+                .contains(&entry("albumartist", "Various Artists"))
         );
     }
 
@@ -282,7 +380,7 @@ mod tests {
 
         assert_eq!(
             tags.entries,
-            [entry("artist", "Artist"), entry("album", "Album")]
+            [entry("album", "Album"), entry("artist", "Artist")]
         );
     }
 
@@ -300,9 +398,15 @@ mod tests {
         assert_eq!(
             tags.entries,
             [
-                entry("genre", "Rock; Pop"),
+                absent("album"),
+                absent("albumartist"),
+                absent("artist"),
                 entry("date", "2021"),
-                entry("date#2", "2021")
+                entry("date#2", "2021"),
+                absent("discnumber"),
+                entry("genre", "Rock; Pop"),
+                absent("title"),
+                absent("tracknumber"),
             ]
         );
     }
@@ -321,11 +425,11 @@ mod tests {
         });
 
         let quiet = read_tags(&path, &[], false).unwrap();
-        assert_eq!(quiet.entries, [entry("artist", "Artist")]);
+        assert_eq!(present(&quiet), [entry("artist", "Artist")]);
 
         let verbose = read_tags(&path, &[], true).unwrap();
         assert_eq!(
-            verbose.entries,
+            present(&verbose),
             [
                 entry("artist", "Artist"),
                 entry("PRIV", "www.amazon.com, 512 bytes"),
@@ -371,14 +475,14 @@ mod tests {
     fn renders_json_with_version_and_ordered_tags() {
         let tags = FileTags {
             version: Some(Version::Id3v23),
-            entries: vec![entry("title", "T"), entry("artist", "A")],
+            entries: vec![entry("title", "T"), entry("artist", "A"), absent("album")],
         };
 
         let value = render_json(Path::new("a.mp3"), tags);
 
         assert_eq!(
             serde_json::to_string(&value).unwrap(),
-            r#"{"path":"a.mp3","version":"2.3","tags":{"title":"T","artist":"A"}}"#
+            r#"{"path":"a.mp3","version":"2.3","tags":{"title":"T","artist":"A","album":null}}"#
         );
     }
 }

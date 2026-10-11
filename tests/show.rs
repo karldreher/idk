@@ -11,6 +11,17 @@ use tempfile::TempDir;
 mod common;
 use common::idk;
 
+/// A file's `tags` object without its absent (`null`) fields.
+fn present(tags: &Value) -> Value {
+    let present = tags.as_object().unwrap().iter();
+    Value::Object(
+        present
+            .filter(|(_, v)| !v.is_null())
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+    )
+}
+
 fn mp3(dir: &TempDir, name: &str, artist: &str) -> PathBuf {
     common::mp3(dir.path(), name, |tag| {
         tag.set_artist(artist);
@@ -67,6 +78,52 @@ fn filters_fields() {
 
     let parsed: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(parsed[0]["tags"], json!({ "artist": "Artist" }));
+}
+
+#[test]
+fn lists_absent_core_fields_as_null() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", "Artist");
+
+    let output = idk().args(["show", "--json"]).arg(&file).output().unwrap();
+
+    let parsed: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(parsed[0]["tags"]["artist"], json!("Artist"));
+    assert_eq!(parsed[0]["tags"]["albumartist"], Value::Null);
+    assert!(
+        parsed[0]["tags"]
+            .as_object()
+            .unwrap()
+            .contains_key("albumartist")
+    );
+}
+
+#[test]
+fn field_lists_requested_field_when_absent() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", "Artist");
+
+    let output = idk()
+        .args(["show", "--json", "--field", "albumartist"])
+        .arg(&file)
+        .output()
+        .unwrap();
+
+    let parsed: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(parsed[0]["tags"], json!({ "albumartist": null }));
+}
+
+#[test]
+fn text_shows_absent_field_as_no_value() {
+    let dir = TempDir::new().unwrap();
+    let file = mp3(&dir, "a.mp3", "Artist");
+
+    idk()
+        .arg("show")
+        .arg(&file)
+        .assert()
+        .success()
+        .stdout(contains("\n  albumartist: (no value)\n"));
 }
 
 #[test]
@@ -136,7 +193,7 @@ fn verbose_reveals_hidden_frames() {
 
     let default = idk().args(["show", "--json"]).arg(&file).output().unwrap();
     let default: Value = serde_json::from_slice(&default.stdout).unwrap();
-    assert_eq!(default[0]["tags"], json!({ "artist": "Artist" }));
+    assert_eq!(present(&default[0]["tags"]), json!({ "artist": "Artist" }));
 
     let verbose = idk()
         .args(["show", "--json", "-v"])
@@ -145,7 +202,7 @@ fn verbose_reveals_hidden_frames() {
         .unwrap();
     let verbose: Value = serde_json::from_slice(&verbose.stdout).unwrap();
     assert_eq!(
-        verbose[0]["tags"],
+        present(&verbose[0]["tags"]),
         json!({
             "artist": "Artist",
             "PRIV": "www.amazon.com, 1024 bytes",
